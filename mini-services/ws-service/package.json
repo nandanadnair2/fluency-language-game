@@ -1,0 +1,11 @@
+{
+  "name": "linguascout-ws-service",
+  "version": "1.0.0",
+  "description": "WebSocket mini-service for LinguaScout language-learning app",
+  "scripts": {
+    "dev": "bun --hot index.ts"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.1"
+  }
+}
