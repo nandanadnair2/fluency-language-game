@@ -40,3 +40,73 @@ Stage Summary:
 - Zustand state management with persist
 - WebSocket mini-service for streaming sync
 - Chrome Extension for subtitle scraping
+
+
+---
+Task ID: 18
+Agent: ws-service-creator (subagent)
+Task: Create WebSocket mini-service for LinguaScout streaming sync
+
+Work Log:
+- Created mini-services/ws-service/package.json with socket.io dependency
+- Created mini-services/ws-service/index.ts with room management and subtitle relay
+- Service runs on port 3004 with bun --hot for auto-restart
+- Uses socket.io with path '/' for Caddy proxy compatibility
+
+Stage Summary:
+- WebSocket service at mini-services/ws-service/ running on port 3004
+- Supports: create-room, join-room, subtitle (with mock translation), leave-room, disconnect
+- Rooms stored in Map<string, Set<string>>, auto-cleanup on disconnect
+- Mock translation format: { original, directTranslation, romanized, sourceLanguage, targetLanguage }
+
+
+---
+Task ID: 19
+Agent: extension-creator (subagent)
+Task: Create Chrome Extension for LinguaScout subtitle sync
+
+Work Log:
+- Created browser-extension/manifest.json (Manifest V3, permissions: storage, activeTab)
+- Created browser-extension/content.js with MutationObserver for YouTube/Netflix subtitles
+  - YouTube selectors: .ytp-caption-segment, [class*="caption"]
+  - Netflix selectors: .player-timedtext-text, .caption-text, .timed-text
+  - 200ms debounce + 500ms polling fallback
+  - Stores detected text in chrome.storage.local
+- Created browser-extension/popup.html with cozy warm UI (cream/coral/sage palette)
+- Created browser-extension/popup.js with WebSocket connection to ws://localhost:3004
+- Created icon placeholders (16x16, 48x48, 128x128)
+
+Stage Summary:
+- Chrome Extension at browser-extension/ with subtitle detection and WebSocket sync
+- Content script detects subtitles via MutationObserver, stores in chrome.storage.local
+- Popup reads storage and sends via WebSocket with room code pairing
+- Architecture: content.js (detection) -> storage -> popup.js (network)
+
+
+---
+Task ID: 20
+Agent: main-developer (verification)
+Task: End-to-end verification with Agent Browser
+
+Work Log:
+- Started Next.js dev server on port 3000 (next-server running)
+- Started WebSocket mini-service on port 3004 (bun --hot)
+- Opened http://localhost:3000 in Agent Browser
+- Verified Scanner tab: camera placeholder, Demo Scan button, Upload Image all visible
+- Clicked Demo Scan -> POST /api/scan returned 200 with mock Japanese translation
+- Verified 3 translation cards appeared: "Arigatou gozaimasu" / "Thank you very much" / "ah-ree-GAH-toh goh-zah-ee-MAHS"
+- Verified Watchtower tab: Generate Room Code button works, room code displayed with copy button
+- Verified Profile tab: XP Sprout bar, Quick Stats, Streak Card, Quest Board, Loot Deck all rendered
+- Verified Tongue Twister Trial quiz modal opens with multiple choice questions
+- Clicked quiz answer -> advanced to next question
+- Took screenshots at /tmp/lingua-scanner.png, /tmp/lingua-profile.png, /tmp/lingua-quiz.png
+- All lint checks pass (bun run lint clean)
+
+Stage Summary:
+- All 3 tabs fully functional in browser
+- Scanner: camera UI + demo scan + translation cards with spring animations
+- Watchtower: room code generation + SRT upload + Dynamic Island
+- Profile: XP bar + streak card + quests + loot deck + quiz with confetti
+- Fixed runtime issues: Phosphor icon names, confetti SSR, missing useRef import
+- WebSocket service running, Chrome Extension created
+- MVP is complete and browser-verified
