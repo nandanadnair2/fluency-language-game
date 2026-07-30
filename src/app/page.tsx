@@ -37,11 +37,11 @@ export default function Home() {
               whileHover={{ rotate: 15 }}
               transition={{ type: "spring", stiffness: 300 }}
             >
-              <span className="text-lg">🔍</span>
+              <span className="text-lg">🎯</span>
             </motion.div>
             <div>
               <h1 className="font-serif text-base font-bold text-charcoal leading-tight">
-                LinguaScout
+                Fluency
               </h1>
               <p className="text-[10px] text-muted-foreground leading-tight">
                 Learn languages like a game
@@ -135,7 +135,7 @@ export default function Home() {
       <footer className="bg-cream/90 backdrop-blur-sm border-t border-border/20 mt-auto">
         <div className="max-w-lg mx-auto px-4 py-3 text-center">
           <p className="text-[10px] text-muted-foreground">
-            LinguaScout MVP • Built with Next.js, Framer Motion & 🧡
+            Fluency MVP • Built with Next.js, Framer Motion & 🧡
           </p>
         </div>
       </footer>

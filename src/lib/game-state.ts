@@ -273,7 +273,7 @@ export const useGameStore = create<GameState>()(
       },
     }),
     {
-      name: "linguascout-game-state",
+      name: "fluency-game-state",
     }
   )
 );

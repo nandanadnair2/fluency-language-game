@@ -1,7 +1,8 @@
 /**
- * LinguaScout Popup Script v3
- * Connects DIRECTLY to the LinguaScout WebSocket service (port 3004).
- * No gateway/proxy needed — extension talks to ws-service on its actual port.
+ * Fluency Popup Script v4
+ * Connects to the WebSocket service (port 3004) through the Caddy gateway.
+ * The user provides the web app URL (e.g. http://localhost:81) and the extension
+ * appends XTransformPort=3004 so Caddy routes to the ws-service.
  */
 
 (function () {
@@ -26,12 +27,12 @@
   let intentionalClose = false;
 
   // ---- Server URL Helpers ----
-  // Default to the ws-service directly on port 3004
-  // The extension connects directly — no proxy/gateway needed
+  // The user enters the web app URL (e.g. http://localhost:81).
+  // We route through the Caddy gateway via XTransformPort=3004.
   function getServerUrl() {
     const val = serverUrlInput.value.trim();
     if (val && val.length > 4) return val;
-    return "http://localhost:3004";
+    return ""; // No default — user must enter their web app URL
   }
 
   function buildSocketUrl(serverBase) {
@@ -41,7 +42,8 @@
     const qIdx = url.indexOf("?");
     if (hashIdx > -1) url = url.substring(0, hashIdx);
     if (qIdx > -1) url = url.substring(0, qIdx);
-    return url;
+    // Route through Caddy gateway to the ws-service on port 3004
+    return `${url}/?XTransformPort=3004`;
   }
 
   // ---- UI Helpers ----
@@ -92,6 +94,16 @@
   function connect() {
     if (isConnected || isConnecting) return;
 
+    // Validate server URL
+    const serverUrl = getServerUrl();
+    if (!serverUrl) {
+      serverUrlInput.focus();
+      serverUrlInput.style.borderColor = "#E8735A";
+      setTimeout(() => { serverUrlInput.style.borderColor = "#EDE5D8"; }, 1500);
+      setStatus("error", "Please enter the Web App URL");
+      return;
+    }
+
     // Validate room code
     roomCode = roomInput.value.trim();
     if (roomCode.length < 1) {
@@ -105,11 +117,10 @@
     isConnecting = true;
     setStatus("connecting", "Connecting to server…");
 
-    const serverUrl = getServerUrl();
     const socketUrl = buildSocketUrl(serverUrl);
 
-    console.log(`[LinguaScout] Connecting to: ${socketUrl}`);
-    console.log(`[LinguaScout] Room code: ${roomCode}`);
+    console.log(`[Fluency] Connecting to: ${socketUrl}`);
+    console.log(`[Fluency] Room code: ${roomCode}`);
 
     try {
       socket = io(socketUrl, {
@@ -136,12 +147,12 @@
         clearTimeout(connectTimeout);
         isConnected = true;
         isConnecting = false;
-        console.log(`[LinguaScout] Socket connected: ${socket.id}`);
+        console.log(`[Fluency] Socket connected: ${socket.id}`);
         setStatus("connected");
 
         // Join the room
         socket.emit("join-room", roomCode, (response) => {
-          console.log(`[LinguaScout] Joined room ${roomCode}:`, response);
+          console.log(`[Fluency] Joined room ${roomCode}:`, response);
         });
 
         // Start polling chrome.storage for subtitles
@@ -153,7 +164,7 @@
         isConnected = false;
         isConnecting = false;
         stopStoragePolling();
-        console.warn(`[LinguaScout] Disconnected: ${reason}`);
+        console.warn(`[Fluency] Disconnected: ${reason}`);
 
         if (!intentionalClose) {
           setStatus("error", `Disconnected (${reason}) — retrying…`);
@@ -165,27 +176,27 @@
       socket.on("connect_error", (err) => {
         clearTimeout(connectTimeout);
         isConnecting = false;
-        console.error(`[LinguaScout] Connection error: ${err.message}`);
+        console.error(`[Fluency] Connection error: ${err.message}`);
         setStatus("error", `Connection failed — ${err.message}`);
         cleanup();
       });
 
       socket.on("subtitle", (data) => {
-        console.log("[LinguaScout] Subtitle echoed:", data.text?.slice(0, 40));
+        console.log("[Fluency] Subtitle echoed:", data.text?.slice(0, 40));
       });
 
       socket.on("member-joined", (data) => {
-        console.log("[LinguaScout] Member joined:", data);
+        console.log("[Fluency] Member joined:", data);
       });
 
       socket.on("member-left", (data) => {
-        console.log("[LinguaScout] Member left:", data);
+        console.log("[Fluency] Member left:", data);
       });
 
     } catch (err) {
       setStatus("error", "Failed to create connection");
       isConnecting = false;
-      console.error("[LinguaScout] Socket creation error:", err);
+      console.error("[Fluency] Socket creation error:", err);
     }
   }
 
@@ -232,9 +243,9 @@
 
   function pollStorage() {
     chrome.storage.local.get(
-      ["linguaScout_lastSubtitle", "linguaScout_lastTimestamp"],
+      ["fluency_lastSubtitle", "fluency_lastTimestamp"],
       (result) => {
-        const text = result.linguaScout_lastSubtitle || "";
+        const text = result.fluency_lastSubtitle || "";
         updateSubtitlePreview(text);
 
         if (isConnected && text && text !== lastSentText) {
@@ -244,9 +255,9 @@
               code: roomCode,
               text: text,
             });
-            console.log(`[LinguaScout] Sent subtitle: "${text.slice(0, 50)}"`);
+            console.log(`[Fluency] Sent subtitle: "${text.slice(0, 50)}"`);
           } catch (err) {
-            console.error("[LinguaScout] Failed to send subtitle:", err);
+            console.error("[Fluency] Failed to send subtitle:", err);
           }
         }
       }
@@ -273,31 +284,31 @@
 
   // Restore saved values on popup open
   chrome.storage.local.get(
-    ["linguaScout_roomCode", "linguaScout_serverUrl"],
+    ["fluency_roomCode", "fluency_serverUrl"],
     (result) => {
-      if (result.linguaScout_roomCode) {
-        roomInput.value = result.linguaScout_roomCode;
+      if (result.fluency_roomCode) {
+        roomInput.value = result.fluency_roomCode;
       }
-      if (result.linguaScout_serverUrl) {
-        serverUrlInput.value = result.linguaScout_serverUrl;
+      if (result.fluency_serverUrl) {
+        serverUrlInput.value = result.fluency_serverUrl;
       }
     }
   );
 
   // Save on change
   roomInput.addEventListener("input", () => {
-    chrome.storage.local.set({ linguaScout_roomCode: roomInput.value });
+    chrome.storage.local.set({ fluency_roomCode: roomInput.value });
   });
 
   serverUrlInput.addEventListener("input", () => {
-    chrome.storage.local.set({ linguaScout_serverUrl: serverUrlInput.value });
+    chrome.storage.local.set({ fluency_serverUrl: serverUrlInput.value });
   });
 
   // Show latest subtitle even when not connected
   chrome.storage.local.get(
-    ["linguaScout_lastSubtitle", "linguaScout_lastTimestamp"],
+    ["fluency_lastSubtitle", "fluency_lastTimestamp"],
     (result) => {
-      updateSubtitlePreview(result.linguaScout_lastSubtitle || "");
+      updateSubtitlePreview(result.fluency_lastSubtitle || "");
     }
   );
 

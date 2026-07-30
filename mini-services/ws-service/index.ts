@@ -125,5 +125,5 @@ io.on("connection", (socket) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`LinguaScout WebSocket service running on port ${PORT}`);
+  console.log(`Fluency WebSocket service running on port ${PORT}`);
 });

@@ -262,3 +262,37 @@ Stage Summary:
 - Extension now connects directly to ws-service port 3004 — no gateway proxy required
 - Server URL pre-filled with http://localhost:3004 as default
 - All Socket.io path configs aligned (server and all clients use path: "/")
+
+---
+Task ID: bugfix-extension-v4+rename
+Agent: main-developer
+Task: Fix extension WebSocket error + rename app to Fluency
+
+Work Log:
+- Analyzed screenshot: Server URL correctly shows http://localhost:3004, room code entered, but "Connection failed — websocket error"
+- Root cause: ws-service port 3004 is NOT directly accessible from user's browser. Only Caddy gateway (port 81) is exposed. Extension must route through Caddy with XTransformPort=3004
+- Extension fix:
+  - Changed "WebSocket Server" field to "Web App URL" — user enters the web app URL (Preview Panel URL)
+  - buildSocketUrl() now appends `/?XTransformPort=3004` to route through Caddy
+  - Removed default value — user must enter their web app URL
+  - Added server URL validation (empty check with red border flash)
+  - Updated hint text explaining user should enter web app URL
+- Rename LinguaScout → Fluency across all files:
+  - src/app/page.tsx: title, favicon emoji (🔍→🎯), footer
+  - src/app/layout.tsx: metadata title/description/keywords
+  - src/app/globals.css: CSS comments
+  - src/components/WatchtowerTab.tsx: extension name references
+  - src/components/ProfileTab.tsx: "Language Scout" → "Fluency Learner"
+  - src/lib/db-vocabulary.ts: class LinguaScoutDB → FluencyDB, DB name
+  - src/lib/game-state.ts: persist store name
+  - browser-extension/: manifest.json, popup.html, popup.js, content.js (console labels, storage keys)
+  - mini-services/ws-service/: package.json, index.ts console labels
+- Verified: zero "LinguaScout" references remain in source code
+- Verified: all tabs work (Scanner AI translation, Watchtower connected, Profile)
+- Clean lint, no console errors
+
+Stage Summary:
+- Extension connects through Caddy gateway (XTransformPort=3004) instead of direct port access
+- Server URL field renamed to "Web App URL" with clear instructions
+- Complete rename: LinguaScout → Fluency (12+ files, all source code clean)
+- All three tabs verified working with correct branding

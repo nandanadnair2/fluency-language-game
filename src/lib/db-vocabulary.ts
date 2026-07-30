@@ -22,12 +22,12 @@ export interface CachedTranslation {
   cachedAt: Date;
 }
 
-class LinguaScoutDB extends Dexie {
+class FluencyDB extends Dexie {
   vocabulary!: EntityTable<VocabularyWord, "id">;
   cache!: EntityTable<CachedTranslation, "id">;
 
   constructor() {
-    super("LinguaScoutDB");
+    super("FluencyDB");
     this.version(1).stores({
       vocabulary: "++id, original, directTranslation, savedAt, sourceLanguage",
       cache: "++id, originalText, cachedAt",
@@ -35,7 +35,7 @@ class LinguaScoutDB extends Dexie {
   }
 }
 
-export const db = new LinguaScoutDB();
+export const db = new FluencyDB();
 
 // Vocabulary operations
 export async function saveWord(word: Omit<VocabularyWord, "id">) {

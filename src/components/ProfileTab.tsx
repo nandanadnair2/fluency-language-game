@@ -73,7 +73,7 @@ export default function ProfileTab() {
           </motion.div>
           <div className="flex-1 min-w-0">
             <h2 className="font-serif text-xl font-bold text-charcoal truncate">
-              Language Scout
+              Fluency Learner
             </h2>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-sm text-muted-foreground">

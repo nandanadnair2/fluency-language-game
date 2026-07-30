@@ -1,7 +1,7 @@
 {
-  "name": "linguascout-ws-service",
+  "name": "fluency-ws-service",
   "version": "1.0.0",
-  "description": "WebSocket mini-service for LinguaScout language-learning app",
+  "description": "WebSocket mini-service for Fluency language-learning app",
   "scripts": {
     "dev": "bun --hot index.ts"
   },

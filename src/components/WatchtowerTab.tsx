@@ -386,7 +386,7 @@ export default function WatchtowerTab() {
                   Install the Extension
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  The <span className="font-medium text-coral">LinguaScout Subtitle Sync</span> extension is in{" "}
+                  The <span className="font-medium text-coral">Fluency Subtitle Sync</span> extension is in{" "}
                   <code className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono">browser-extension/</code>
                 </p>
                 <div className="mt-2 p-3 rounded-2xl bg-secondary/60 space-y-1.5">
@@ -576,7 +576,7 @@ export default function WatchtowerTab() {
               <p className="text-sm text-muted-foreground flex items-start gap-2">
                 <Info size={16} weight="fill" className="text-coral shrink-0 mt-0.5" />
                 <span>
-                  Enter this code in the <span className="font-medium text-coral">LinguaScout extension popup</span> on Netflix or YouTube. Make sure Japanese subtitles are turned on.
+                  Enter this code in the <span className="font-medium text-coral">Fluency extension popup</span> on Netflix or YouTube. Make sure Japanese subtitles are turned on.
                 </span>
               </p>
             </div>

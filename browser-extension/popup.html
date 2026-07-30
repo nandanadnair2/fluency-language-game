@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=420, initial-scale=1.0">
-  <title>LinguaScout</title>
+  <title>Fluency</title>
   <style>
     /* ---- Cozy Warm Palette ---- */
     :root {
@@ -270,20 +270,19 @@
 <body>
 
   <div class="header">
-    <h1>🌿 LinguaScout</h1>
+    <h1>🌿 Fluency</h1>
     <p>Subtitle sync for Japanese learners</p>
   </div>
 
   <div class="content">
     <!-- Server URL (configurable) -->
     <div class="server-section">
-      <label for="serverUrl">🌐 WebSocket Server</label>
+      <label for="serverUrl">🌐 Web App URL</label>
       <input
         type="text"
         id="serverUrl"
         class="server-input"
-        placeholder="http://localhost:3004"
-        value="http://localhost:3004"
+        placeholder="e.g. http://localhost:81 or your app URL"
         autocomplete="off"
       />
     </div>
@@ -312,7 +311,7 @@
 
     <!-- Connection hint (shown when not connected) -->
     <div id="connectionHint" class="connection-hint">
-      <strong>Tip:</strong> The Server URL above should point to the WebSocket service (default: <code>http://localhost:3004</code>). Generate a room code in the web app's Watchtower tab, then enter it and click Connect.
+      <strong>Tip:</strong> Enter the URL where you access the Fluency web app (the Preview Panel URL, e.g. <code>http://localhost:81</code>). The extension routes subtitle data through the Caddy gateway to the WebSocket service automatically. Generate a room code in the web app's Watchtower tab, then enter it and click Connect.
     </div>
 
     <!-- Subtitle Preview -->

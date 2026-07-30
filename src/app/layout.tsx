@@ -17,18 +17,18 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "LinguaScout – Learn Languages Like a Game",
+  title: "Fluency – Learn Languages Like a Game",
   description:
     "An immersive language-learning web app with a cozy video game aesthetic. Scan text, watch shows, and level up your language skills!",
   keywords: [
-    "LinguaScout",
+    "Fluency",
     "language learning",
     "OCR translator",
     "game-based learning",
     "vocabulary builder",
   ],
   icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>",
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>",
   },
 };
 

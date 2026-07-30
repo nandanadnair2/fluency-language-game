@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LinguaScout - Language Learner",
+  "name": "Fluency - Language Learner",
   "version": "2.0.0",
-  "description": "Sync subtitles from Netflix/YouTube to LinguaScout for real-time translation",
+  "description": "Sync subtitles from Netflix/YouTube to Fluency for real-time translation",
   "permissions": ["storage", "activeTab"],
   "content_scripts": [
     {

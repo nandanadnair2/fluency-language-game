@@ -1,5 +1,5 @@
 /**
- * LinguaScout Content Script
+ * Fluency Content Script
  * Detects subtitle/caption text from YouTube and Netflix using MutationObserver.
  * Only extracts ACTUAL subtitle text — filters out page metadata, buttons, links, etc.
  * Stores detected subtitles in chrome.storage.local for the popup to read.
@@ -9,8 +9,8 @@
   "use strict";
 
   // Prevent double-injection
-  if (window.__linguaScoutInjected) return;
-  window.__linguaScoutInjected = true;
+  if (window.__fluencyInjected) return;
+  window.__fluencyInjected = true;
 
   const HOST = window.location.hostname;
   const isYouTube = HOST.includes("youtube.com") || HOST.includes("youtu.be");
@@ -156,11 +156,11 @@
 
     chrome.storage.local.set(
       {
-        linguaScout_lastSubtitle: text,
-        linguaScout_lastTimestamp: Date.now(),
+        fluency_lastSubtitle: text,
+        fluency_lastTimestamp: Date.now(),
       },
       () => {
-        console.log("[LinguaScout] Subtitle detected:", text);
+        console.log("[Fluency] Subtitle detected:", text);
       }
     );
   }
@@ -190,7 +190,7 @@
   // Main: MutationObserver + polling
   // ---------------------------------------------------------------
   function init() {
-    console.log(`[LinguaScout] Content script active on ${HOST}`);
+    console.log(`[Fluency] Content script active on ${HOST}`);
 
     const observer = new MutationObserver(handleMutation);
     observer.observe(document.body, {
