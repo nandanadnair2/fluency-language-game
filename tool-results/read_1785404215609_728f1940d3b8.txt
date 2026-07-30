@@ -1,0 +1,826 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import React, { useState, useCallback, useEffect, useRef } from "react";
+     4→     4→import { motion, AnimatePresence } from "framer-motion";
+     5→     5→import {
+     6→     6→  Television,
+     7→     7→  Copy,
+     8→     8→  Upload,
+     9→     9→  Link,
+    10→    10→  Play,
+    11→    11→  Pause,
+    12→    12→  SkipForward,
+    13→    13→  PuzzlePiece,
+    14→    14→  ArrowRight,
+    15→    15→  Info,
+    16→    16→  WifiHigh,
+    17→    17→  WifiSlash,
+    18→    18→  SpinnerGap,
+    19→    19→  Translate,
+    20→    20→  Keyboard,
+    21→    21→  FileText,
+    22→    22→  CaretDown,
+    23→    23→} from "@phosphor-icons/react";
+    24→    24→import DynamicIsland from "@/components/DynamicIsland";
+    25→    25→import { useGameStore } from "@/lib/game-state";
+    26→    26→import type { TranslationResponse } from "@/lib/translation-utils";
+    27→    27→
+    28→    28→interface ParsedSubtitle {
+    29→    29→  index: number;
+    30→    30→  text: string;
+    31→    31→}
+    32→    32→
+    33→    33→export default function WatchtowerTab() {
+    34→    34→  const [manualText, setManualText] = useState("");
+    35→    35→  const [isTranslating, setIsTranslating] = useState(false);
+    36→    36→
+    37→    37→  const [roomCode, setRoomCode] = useState<string>("");
+    38→    38→  const [isRoomActive, setIsRoomActive] = useState(false);
+    39→    39→  const [socketConnected, setSocketConnected] = useState(false);
+    40→    40→  const [socketConnecting, setSocketConnecting] = useState(false);
+    41→    41→  const [subtitle, setSubtitle] = useState<TranslationResponse | null>(null);
+    42→    42→  const [isExpanded, setIsExpanded] = useState(false);
+    43→    43→  const [subtitles, setSubtitles] = useState<ParsedSubtitle[]>([]);
+    44→    44→  const [currentSubIndex, setCurrentSubIndex] = useState(0);
+    45→    45→  const [isPlaying, setIsPlaying] = useState(false);
+    46→    46→  const [isUploading, setIsUploading] = useState(false);
+    47→    47→  const [connectionError, setConnectionError] = useState<string | null>(null);
+    48→    48→  const [showExtensionSection, setShowExtensionSection] = useState(false);
+    49→    49→  const [socketModule, setSocketModule] = useState<{io: any; Socket: any} | null>(null);
+    50→    50→  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    51→    51→  const socketRef = useRef<any>(null);
+    52→    52→
+    53→    53→  const addXP = useGameStore((s) => s.addXP);
+    54→    54→  const scanWord = useGameStore((s) => s.scanWord);
+    55→    55→
+    56→    56→  // ─── Manual Text Translation ───
+    57→    57→  const handleManualTranslate = useCallback(async () => {
+    58→    58→    const text = manualText.trim();
+    59→    59→    if (!text) return;
+    60→    60→
+    61→    61→    setIsTranslating(true);
+    62→    62→    try {
+    63→    63→      const res = await fetch("/api/translate", {
+    64→    64→        method: "POST",
+    65→    65→        headers: { "Content-Type": "application/json" },
+    66→    66→        body: JSON.stringify({ text }),
+    67→    67→      });
+    68→    68→      const translated = await res.json();
+    69→    69→      setSubtitle({
+    70→    70→        original: text,
+    71→    71→        directTranslation: translated.directTranslation || text,
+    72→    72→        romanized: translated.romanized || text,
+    73→    73→        sourceLanguage: translated.sourceLanguage || "ja",
+    74→    74→        targetLanguage: translated.targetLanguage || "en",
+    75→    75→        confidence: 0.90,
+    76→    76→      });
+    77→    77→      setIsExpanded(true);
+    78→    78→    } catch {
+    79→    79→      setSubtitle({
+    80→    80→        original: text,
+    81→    81→        directTranslation: `[Could not translate: ${text}]`,
+    82→    82→        romanized: text,
+    83→    83→        sourceLanguage: "auto",
+    84→    84→        targetLanguage: "en",
+    85→    85→        confidence: 0.5,
+    86→    86→      });
+    87→    87→      setIsExpanded(true);
+    88→    88→    } finally {
+    89→    89→      setIsTranslating(false);
+    90→    90→    }
+    91→    91→  }, [manualText]);
+    92→    92→
+    93→    93→  // Dynamically load socket.io-client only when needed (saves memory)
+    94→    94→  const loadSocketIO = useCallback(async () => {
+    95→    95→    if (socketModule) return socketModule;
+    96→    96→    try {
+    97→    97→      const mod = await import("socket.io-client");
+    98→    98→      setSocketModule({ io: mod.io, Socket: mod.Socket });
+    99→    99→      return { io: mod.io, Socket: mod.Socket };
+   100→   100→    } catch (err) {
+   101→   101→      console.error("Failed to load socket.io-client:", err);
+   102→   102→      return null;
+   103→   103→    }
+   104→   104→  }, [socketModule]);
+   105→   105→
+   106→   106→  // ─── Socket.io Connection Management ───
+   107→   107→  const connectSocket = useCallback(
+   108→   108→    async (code: string) => {
+   109→   109→      const mod = await loadSocketIO();
+   110→   110→      if (!mod) return;
+   111→   111→      if (socketRef.current) {
+   112→   112→        socketRef.current.disconnect();
+   113→   113→        socketRef.current = null;
+   114→   114→      }
+   115→   115→
+   116→   116→      setSocketConnecting(true);
+   117→   117→      setConnectionError(null);
+   118→   118→
+   119→   119→      const socket = mod.io("/?XTransformPort=3004", {
+   120→   120→        path: "/",
+   121→   121→        transports: ["websocket", "polling"],
+   122→   122→        timeout: 10000,
+   123→   123→        reconnection: true,
+   124→   124→        reconnectionAttempts: 5,
+   125→   125→        reconnectionDelay: 2000,
+   126→   126→      });
+   127→   127→
+   128→   128→      socketRef.current = socket;
+   129→   129→
+   130→   130→      socket.on("connect", () => {
+   131→   131→        console.log("[Watchtower] Socket connected:", socket.id);
+   132→   132→        setSocketConnected(true);
+   133→   133→        setSocketConnecting(false);
+   134→   134→        setConnectionError(null);
+   135→   135→
+   136→   136→        socket.emit("join-room", code, (response: any) => {
+   137→   137→          console.log("[Watchtower] Joined room:", code, response);
+   138→   138→        });
+   139→   139→      });
+   140→   140→
+   141→   141→      socket.on("disconnect", (reason) => {
+   142→   142→        console.log("[Watchtower] Socket disconnected:", reason);
+   143→   143→        setSocketConnected(false);
+   144→   144→        setSocketConnecting(false);
+   145→   145→        if (reason === "io server disconnect") {
+   146→   146→          setConnectionError("Server disconnected. Try generating a new room code.");
+   147→   147→        }
+   148→   148→      });
+   149→   149→
+   150→   150→      socket.on("connect_error", (err) => {
+   151→   151→        console.error("[Watchtower] Connection error:", err.message);
+   152→   152→        setSocketConnected(false);
+   153→   153→        setSocketConnecting(false);
+   154→   154→        setConnectionError("Connection failed. Make sure the WebSocket service is running.");
+   155→   155→      });
+   156→   156→
+   157→   157→      socket.on("subtitle", async (data: { code: string; text: string; translation: any }) => {
+   158→   158→        console.log("[Watchtower] Received subtitle:", data.text?.slice(0, 50));
+   159→   159→
+   160→   160→        if (data.translation && data.translation.directTranslation) {
+   161→   161→          setSubtitle({
+   162→   162→            original: data.text,
+   163→   163→            directTranslation: data.translation.directTranslation,
+   164→   164→            romanized: data.translation.romanized || data.translation.directTranslation,
+   165→   165→            sourceLanguage: data.translation.sourceLanguage || "ja",
+   166→   166→            targetLanguage: data.translation.targetLanguage || "en",
+   167→   167→            confidence: 0.90,
+   168→   168→          });
+   169→   169→        } else {
+   170→   170→          setIsTranslating(true);
+   171→   171→          try {
+   172→   172→            const res = await fetch("/api/translate", {
+   173→   173→              method: "POST",
+   174→   174→              headers: { "Content-Type": "application/json" },
+   175→   175→              body: JSON.stringify({ text: data.text }),
+   176→   176→            });
+   177→   177→            const translated = await res.json();
+   178→   178→            setSubtitle({
+   179→   179→              original: data.text,
+   180→   180→              directTranslation: translated.directTranslation || data.text,
+   181→   181→              romanized: translated.romanized || data.text,
+   182→   182→              sourceLanguage: translated.sourceLanguage || "ja",
+   183→   183→              targetLanguage: translated.targetLanguage || "en",
+   184→   184→              confidence: 0.90,
+   185→   185→            });
+   186→   186→          } catch {
+   187→   187→            setSubtitle({
+   188→   188→              original: data.text,
+   189→   189→              directTranslation: data.text,
+   190→   190→              romanized: data.text,
+   191→   191→              sourceLanguage: "auto",
+   192→   192→              targetLanguage: "en",
+   193→   193→              confidence: 0.5,
+   194→   194→            });
+   195→   195→          } finally {
+   196→   196→            setIsTranslating(false);
+   197→   197→          }
+   198→   198→        }
+   199→   199→        setIsExpanded(true);
+   200→   200→      });
+   201→   201→
+   202→   202→      socket.on("member-joined", (data: any) => {
+   203→   203→        console.log("[Watchtower] Member joined:", data);
+   204→   204→      });
+   205→   205→
+   206→   206→      socket.on("member-left", (data: any) => {
+   207→   207→        console.log("[Watchtower] Member left:", data);
+   208→   208→      });
+   209→   209→    },
+   210→   210→    []
+   211→   211→  );
+   212→   212→
+   213→   213→  // Cleanup socket on unmount
+   214→   214→  useEffect(() => {
+   215→   215→    return () => {
+   216→   216→      if (socketRef.current) {
+   217→   217→        socketRef.current.disconnect();
+   218→   218→        socketRef.current = null;
+   219→   219→      }
+   220→   220→    };
+   221→   221→  }, []);
+   222→   222→
+   223→   223→  const generateRoomCode = useCallback(async () => {
+   224→   224→    try {
+   225→   225→      const res = await fetch("/api/watchtower", {
+   226→   226→        method: "POST",
+   227→   227→        headers: { "Content-Type": "application/json" },
+   228→   228→        body: JSON.stringify({ action: "create-room" }),
+   229→   229→      });
+   230→   230→      const data = await res.json();
+   231→   231→      if (data.code) {
+   232→   232→        setRoomCode(data.code);
+   233→   233→        setIsRoomActive(true);
+   234→   234→        connectSocket(data.code);
+   235→   235→        return;
+   236→   236→      }
+   237→   237→    } catch {
+   238→   238→      // Fallback
+   239→   239→    }
+   240→   240→
+   241→   241→    const code = String(Math.floor(1000 + Math.random() * 9000));
+   242→   242→    setRoomCode(code);
+   243→   243→    setIsRoomActive(true);
+   244→   244→    connectSocket(code);
+   245→   245→  }, [connectSocket]);
+   246→   246→
+   247→   247→  const disconnectRoom = useCallback(() => {
+   248→   248→    if (socketRef.current) {
+   249→   249→      socketRef.current.disconnect();
+   250→   250→      socketRef.current = null;
+   251→   251→    }
+   252→   252→    if (intervalRef.current) {
+   253→   253→      clearInterval(intervalRef.current);
+   254→   254→      intervalRef.current = null;
+   255→   255→    }
+   256→   256→    setIsRoomActive(false);
+   257→   257→    setSocketConnected(false);
+   258→   258→    setSocketConnecting(false);
+   259→   259→    setConnectionError(null);
+   260→   260→    setSubtitles([]);
+   261→   261→    setCurrentSubIndex(0);
+   262→   262→    setIsPlaying(false);
+   263→   263→    setSubtitle(null);
+   264→   264→  }, []);
+   265→   265→
+   266→   266→  const handleSRTUpload = useCallback(
+   267→   267→    async (e: React.ChangeEvent<HTMLInputElement>) => {
+   268→   268→      const file = e.target.files?.[0];
+   269→   269→      if (!file) return;
+   270→   270→
+   271→   271→      setIsUploading(true);
+   272→   272→      const text = await file.text();
+   273→   273→      try {
+   274→   274→        const res = await fetch("/api/srt", {
+   275→   275→          method: "POST",
+   276→   276→          headers: { "Content-Type": "application/json" },
+   277→   277→          body: JSON.stringify({ srtContent: text }),
+   278→   278→        });
+   279→   279→        const data = await res.json();
+   280→   280→        if (data.subtitles && data.subtitles.length > 0) {
+   281→   281→          setSubtitles(data.subtitles);
+   282→   282→          setCurrentSubIndex(0);
+   283→   283→          setRoomCode("SRT-LOADED");
+   284→   284→          setIsRoomActive(true);
+   285→   285→        }
+   286→   286→      } catch (err) {
+   287→   287→        console.error("SRT upload failed:", err);
+   288→   288→      } finally {
+   289→   289→        setIsUploading(false);
+   290→   290→      }
+   291→   291→    },
+   292→   292→    []
+   293→   293→  );
+   294→   294→
+   295→   295→  // Auto-play subtitles
+   296→   296→  useEffect(() => {
+   297→   297→    if (isPlaying && subtitles.length > 0) {
+   298→   298→      intervalRef.current = setInterval(() => {
+   299→   299→        setCurrentSubIndex((prev) => {
+   300→   300→          if (prev + 1 >= subtitles.length) {
+   301→   301→            setIsPlaying(false);
+   302→   302→            return prev;
+   303→   303→          }
+   304→   304→          return prev + 1;
+   305→   305→        });
+   306→   306→      }, 3000);
+   307→   307→    } else {
+   308→   308→      if (intervalRef.current) {
+   309→   309→        clearInterval(intervalRef.current);
+   310→   310→        intervalRef.current = null;
+   311→   311→      }
+   312→   312→    }
+   313→   313→
+   314→   314→    return () => {
+   315→   315→      if (intervalRef.current) {
+   316→   316→        clearInterval(intervalRef.current);
+   317→   317→      }
+   318→   318→    };
+   319→   319→  }, [isPlaying, subtitles]);
+   320→   320→
+   321→   321→  // Translate current SRT subtitle when index changes
+   322→   322→  useEffect(() => {
+   323→   323→    if (subtitles.length > 0 && currentSubIndex < subtitles.length && roomCode === "SRT-LOADED") {
+   324→   324→      const sub = subtitles[currentSubIndex];
+   325→   325→      setIsTranslating(true);
+   326→   326→
+   327→   327→      fetch("/api/translate", {
+   328→   328→        method: "POST",
+   329→   329→        headers: { "Content-Type": "application/json" },
+   330→   330→        body: JSON.stringify({ text: sub.text }),
+   331→   331→      })
+   332→   332→        .then((r) => r.json())
+   333→   333→        .then((translated) => {
+   334→   334→          setSubtitle({
+   335→   335→            original: sub.text,
+   336→   336→            directTranslation: translated.directTranslation || `[${sub.text}]`,
+   337→   337→            romanized: translated.romanized || `[${sub.text}]`,
+   338→   338→            sourceLanguage: translated.sourceLanguage || "auto",
+   339→   339→            targetLanguage: translated.targetLanguage || "en",
+   340→   340→            confidence: 0.90,
+   341→   341→          });
+   342→   342→        })
+   343→   343→        .catch(() => {
+   344→   344→          setSubtitle({
+   345→   345→            original: sub.text,
+   346→   346→            directTranslation: `[${sub.text}]`,
+   347→   347→            romanized: `[${sub.text}]`,
+   348→   348→            sourceLanguage: "auto",
+   349→   349→            targetLanguage: "en",
+   350→   350→            confidence: 0.5,
+   351→   351→          });
+   352→   352→        })
+   353→   353→        .finally(() => setIsTranslating(false));
+   354→   354→    }
+   355→   355→  }, [currentSubIndex, subtitles, roomCode]);
+   356→   356→
+   357→   357→  const handleSave = useCallback(
+   358→   358→    (word: TranslationResponse) => {
+   359→   359→      import("@/lib/db-vocabulary").then(({ saveWord }) => {
+   360→   360→        saveWord({
+   361→   361→          original: word.original,
+   362→   362→          directTranslation: word.directTranslation,
+   363→   363→          romanized: word.romanized,
+   364→   364→          sourceLanguage: word.sourceLanguage,
+   365→   365→          targetLanguage: word.targetLanguage,
+   366→   366→          savedAt: new Date(),
+   367→   367→          xpEarned: 3,
+   368→   368→          reviewCount: 1,
+   369→   369→        });
+   370→   370→      });
+   371→   371→      addXP(3);
+   372→   372→      scanWord();
+   373→   373→    },
+   374→   374→    [addXP, scanWord]
+   375→   375→  );
+   376→   376→
+   377→   377→  const handleDismiss = useCallback(() => {
+   378→   378→    setSubtitle(null);
+   379→   379→    setIsExpanded(false);
+   380→   380→  }, []);
+   381→   381→
+   382→   382→  return (
+   383→   383→    <div className="flex flex-col gap-4 h-full overflow-y-auto custom-scrollbar pb-4">
+   384→   384→      {/* Header card */}
+   385→   385→      <div className="p-6 rounded-3xl bg-card shadow-xl border border-border/50">
+   386→   386→        <div className="flex items-center gap-3 mb-2">
+   387→   387→          <div className="w-12 h-12 rounded-2xl bg-coral/10 flex items-center justify-center">
+   388→   388→            <Television size={24} weight="duotone" className="text-coral" />
+   389→   389→          </div>
+   390→   390→          <div>
+   391→   391→            <h2 className="font-serif text-lg font-bold text-charcoal">
+   392→   392→              Watchtower Mode
+   393→   393→            </h2>
+   394→   394→            <p className="text-xs text-muted-foreground">
+   395→   395→              Translate Japanese from shows, subtitles & text
+   396→   396→            </p>
+   397→   397→          </div>
+   398→   398→        </div>
+   399→   399→        <p className="text-xs text-muted-foreground leading-relaxed">
+   400→   400→          Type or paste Japanese text, upload subtitles, or sync with our Chrome Extension
+   401→   401→          for live translation while watching shows!
+   402→   402→        </p>
+   403→   403→      </div>
+   404→   404→
+   405→   405→      {/* ─── Quick Translate (Manual Input) ─── */}
+   406→   406→      <motion.div
+   407→   407→        className="p-6 rounded-3xl bg-gradient-to-br from-coral/5 to-butter/10 shadow-xl border border-coral/20"
+   408→   408→        initial={{ opacity: 0, y: 20 }}
+   409→   409→        animate={{ opacity: 1, y: 0 }}
+   410→   410→        transition={{ delay: 0.05 }}
+   411→   411→      >
+   412→   412→        <div className="flex items-center gap-2 mb-4">
+   413→   413→          <div className="w-8 h-8 rounded-xl bg-coral/15 flex items-center justify-center">
+   414→   414→            <Keyboard size={18} weight="fill" className="text-coral" />
+   415→   415→          </div>
+   416→   416→          <div>
+   417→   417→            <h3 className="font-serif text-base font-bold text-charcoal">
+   418→   418→              Quick Translate
+   419→   419→            </h3>
+   420→   420→            <p className="text-[10px] text-muted-foreground">
+   421→   421→              Type or paste any Japanese text
+   422→   422→            </p>
+   423→   423→          </div>
+   424→   424→        </div>
+   425→   425→
+   426→   426→        <div className="space-y-3">
+   427→   427→          <textarea
+   428→   428→            value={manualText}
+   429→   429→            onChange={(e) => setManualText(e.target.value)}
+   430→   430→            placeholder="Type or paste Japanese text here... e.g. こんにちは、世界！"
+   431→   431→            className="w-full p-4 rounded-2xl bg-card border-2 border-border/50 text-base text-charcoal placeholder:text-muted-foreground/50 focus:outline-none focus:border-coral/50 resize-none transition-colors min-h-[80px]"
+   432→   432→            rows={3}
+   433→   433→          />
+   434→   434→          <button
+   435→   435→            onClick={handleManualTranslate}
+   436→   436→            disabled={!manualText.trim() || isTranslating}
+   437→   437→            className="w-full py-3 rounded-2xl bg-coral text-white font-medium shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+   438→   438→          >
+   439→   439→            {isTranslating ? (
+   440→   440→              <SpinnerGap size={18} className="animate-spin" />
+   441→   441→            ) : (
+   442→   442→              <Translate size={18} weight="bold" />
+   443→   443→            )}
+   444→   444→            {isTranslating ? "Translating with AI..." : "Translate"}
+   445→   445→          </button>
+   446→   446→        </div>
+   447→   447→
+   448→   448→        {/* Quick examples */}
+   449→   449→        <div className="mt-3 flex flex-wrap gap-1.5">
+   450→   450→          {["こんにちは", "ありがとう", "いただきます", "大丈夫です"].map((phrase) => (
+   451→   451→            <button
+   452→   452→              key={phrase}
+   453→   453→              onClick={() => setManualText(phrase)}
+   454→   454→              className="px-3 py-1 rounded-full bg-card/80 text-xs text-muted-foreground hover:text-coral hover:bg-card transition-all active:scale-95"
+   455→   455→            >
+   456→   456→              {phrase}
+   457→   457→            </button>
+   458→   458→          ))}
+   459→   459→        </div>
+   460→   460→      </motion.div>
+   461→   461→
+   462→   462→      {/* ─── SRT Upload ─── */}
+   463→   463→      {!isRoomActive && (
+   464→   464→        <motion.div
+   465→   465→          className="p-6 rounded-3xl bg-card shadow-xl border border-border/50"
+   466→   466→          initial={{ opacity: 0, y: 20 }}
+   467→   467→          animate={{ opacity: 1, y: 0 }}
+   468→   468→          transition={{ delay: 0.1 }}
+   469→   469→        >
+   470→   470→          <div className="flex items-center gap-2 mb-3">
+   471→   471→            <div className="w-8 h-8 rounded-xl bg-sage/15 flex items-center justify-center">
+   472→   472→              <FileText size={18} weight="fill" className="text-sage" />
+   473→   473→            </div>
+   474→   474→            <div>
+   475→   475→              <h3 className="font-serif text-base font-bold text-charcoal">
+   476→   476→                Subtitle File
+   477→   477→              </h3>
+   478→   478→              <p className="text-[10px] text-muted-foreground">
+   479→   479→                Upload an .SRT file to translate line-by-line
+   480→   480→              </p>
+   481→   481→            </div>
+   482→   482→          </div>
+   483→   483→
+   484→   484→          <label className="w-full py-3.5 rounded-2xl bg-sage/10 hover:bg-sage/20 cursor-pointer transition-all active:scale-[0.98] flex items-center justify-center gap-2 border border-sage/20">
+   485→   485→            <Upload size={18} weight="duotone" className="text-sage" />
+   486→   486→            <span className="text-sm font-medium text-sage">
+   487→   487→              {isUploading ? "Parsing SRT..." : "Upload .SRT File"}
+   488→   488→            </span>
+   489→   489→            <input
+   490→   490→              type="file"
+   491→   491→              accept=".srt"
+   492→   492→              onChange={handleSRTUpload}
+   493→   493→              className="hidden"
+   494→   494→            />
+   495→   495→          </label>
+   496→   496→        </motion.div>
+   497→   497→      )}
+   498→   498→
+   499→   499→      {/* ─── Chrome Extension + Room Code (Collapsible Advanced Section) ─── */}
+   500→   500→      <motion.div
+   501→   501→        className="rounded-3xl bg-card shadow-xl border border-border/50 overflow-hidden"
+   502→   502→        initial={{ opacity: 0, y: 20 }}
+   503→   503→        animate={{ opacity: 1, y: 0 }}
+   504→   504→        transition={{ delay: 0.15 }}
+   505→   505→      >
+   506→   506→        {/* Section header — always visible, clickable to expand */}
+   507→   507→        <button
+   508→   508→          onClick={() => {
+   509→   509→            if (showExtensionSection) {
+   510→   510→              setShowExtensionSection(false);
+   511→   511→            } else {
+   512→   512→              setShowExtensionSection(true);
+   513→   513→            }
+   514→   514→          }}
+   515→   515→          className="w-full p-5 flex items-center justify-between text-left hover:bg-secondary/30 transition-colors"
+   516→   516→        >
+   517→   517→          <div className="flex items-center gap-2">
+   518→   518→            <div className="w-8 h-8 rounded-xl bg-butter/20 flex items-center justify-center">
+   519→   519→              <PuzzlePiece size={18} weight="fill" className="text-butter" />
+   520→   520→            </div>
+   521→   521→            <div>
+   522→   522→              <h3 className="font-serif text-sm font-bold text-charcoal">
+   523→   523→                Chrome Extension Sync
+   524→   524→              </h3>
+   525→   525→              <p className="text-[10px] text-muted-foreground">
+   526→   526→                For live subtitles from Netflix/YouTube
+   527→   527→              </p>
+   528→   528→            </div>
+   529→   529→          </div>
+   530→   530→          <motion.div
+   531→   531→            animate={{ rotate: showExtensionSection ? 180 : 0 }}
+   532→   532→            transition={{ duration: 0.2 }}
+   533→   533→          >
+   534→   534→            <CaretDown size={18} weight="bold" className="text-muted-foreground" />
+   535→   535→          </motion.div>
+   536→   536→        </button>
+   537→   537→
+   538→   538→        {/* Collapsible content */}
+   539→   539→        <AnimatePresence>
+   540→   540→          {showExtensionSection && (
+   541→   541→            <motion.div
+   542→   542→              initial={{ height: 0, opacity: 0 }}
+   543→   543→              animate={{ height: "auto", opacity: 1 }}
+   544→   544→              exit={{ height: 0, opacity: 0 }}
+   545→   545→              transition={{ duration: 0.3 }}
+   546→   546→              className="overflow-hidden"
+   547→   547→            >
+   548→   548→              <div className="px-5 pb-5 space-y-4 border-t border-border/30 pt-4">
+   549→   549→                {/* Setup guide */}
+   550→   550→                <div className="space-y-3">
+   551→   551→                  <div className="flex items-start gap-3">
+   552→   552→                    <div className="w-6 h-6 rounded-full bg-coral text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+   553→   553→                      1
+   554→   554→                    </div>
+   555→   555→                    <div className="flex-1">
+   556→   556→                      <p className="text-sm font-medium text-charcoal">
+   557→   557→                        Install the Extension
+   558→   558→                      </p>
+   559→   559→                      <p className="text-xs text-muted-foreground mt-0.5">
+   560→   560→                        Load the <span className="font-medium text-coral">Fluency</span> extension from{" "}
+   561→   561→                        <code className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono">browser-extension/</code>
+   562→   562→                      </p>
+   563→   563→                      <div className="mt-1.5 p-2.5 rounded-xl bg-secondary/60">
+   564→   564→                        <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+   565→   565→                          <ArrowRight size={10} weight="bold" className="text-coral shrink-0 mt-0.5" />
+   566→   566→                          Chrome → <code className="px-1 py-0.5 rounded bg-card text-[10px] font-mono">chrome://extensions</code> → Developer mode → Load unpacked
+   567→   567→                        </p>
+   568→   568→                      </div>
+   569→   569→                    </div>
+   570→   570→                  </div>
+   571→   571→
+   572→   572→                  <div className="flex items-start gap-3">
+   573→   573→                    <div className="w-6 h-6 rounded-full bg-coral text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+   574→   574→                      2
+   575→   575→                    </div>
+   576→   576→                    <div className="flex-1">
+   577→   577→                      <p className="text-sm font-medium text-charcoal">
+   578→   578→                        Generate a Room Code
+   579→   579→                      </p>
+   580→   580→                      <p className="text-xs text-muted-foreground mt-0.5">
+   581→   581→                        Click the button below to create a sync room
+   582→   582→                      </p>
+   583→   583→                    </div>
+   584→   584→                  </div>
+   585→   585→
+   586→   586→                  <div className="flex items-start gap-3">
+   587→   587→                    <div className="w-6 h-6 rounded-full bg-coral text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+   588→   588→                      3
+   589→   589→                    </div>
+   590→   590→                    <div className="flex-1">
+   591→   591→                      <p className="text-sm font-medium text-charcoal">
+   592→   592→                        Open YouTube/Netflix → click extension → enter code → done!
+   593→   593→                      </p>
+   594→   594→                    </div>
+   595→   595→                  </div>
+   596→   596→                </div>
+   597→   597→
+   598→   598→                {/* Self-hosting guide */}
+   599→   599→                <div className="p-4 rounded-xl bg-butter/10 border border-butter/20 space-y-3">
+   600→   600→                  <div className="flex items-start gap-2">
+   601→   601→                    <Info size={14} weight="fill" className="text-butter shrink-0 mt-0.5" />
+   602→   602→                    <span className="text-[11px] text-muted-foreground">
+   603→   603→                      <span className="font-medium text-butter">Self-hosting required for extension sync.</span> Here&apos;s how to set up Fluency on your own machine:
+   604→   604→                    </span>
+   605→   605→                  </div>
+   606→   606→                  <div className="space-y-2 pl-6">
+   607→   607→                    <p className="text-[11px] text-muted-foreground">
+   608→   608→                      <span className="font-medium text-charcoal">1.</span> Clone or download the Fluency project to your computer
+   609→   609→                    </p>
+   610→   610→                    <p className="text-[11px] text-muted-foreground">
+   611→   611→                      <span className="font-medium text-charcoal">2.</span> Run <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">bun install</code> to install dependencies
+   612→   612→                    </p>
+   613→   613→                    <p className="text-[11px] text-muted-foreground">
+   614→   614→                      <span className="font-medium text-charcoal">3.</span> Start the web app: <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">bun run dev</code>
+   615→   615→                    </p>
+   616→   616→                    <p className="text-[11px] text-muted-foreground">
+   617→   617→                      <span className="font-medium text-charcoal">4.</span> Start the WebSocket service: <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">cd mini-services/ws-service &amp;&amp; bun run dev</code>
+   618→   618→                    </p>
+   619→   619→                    <p className="text-[11px] text-muted-foreground">
+   620→   620→                      <span className="font-medium text-charcoal">5.</span> Open the Fluency web app at <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">http://localhost:3000</code>
+   621→   621→                    </p>
+   622→   622→                    <p className="text-[11px] text-muted-foreground">
+   623→   623→                      <span className="font-medium text-charcoal">6.</span> In the extension popup, enter <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">http://localhost:3000</code> as the Web App URL
+   624→   624→                    </p>
+   625→   625→                  </div>
+   626→   626→                  <p className="text-[10px] text-muted-foreground italic">
+   627→   627→                    💡 In this demo environment, use Quick Translate or SRT upload above instead.
+   628→   628→                  </p>
+   629→   629→                </div>
+   630→   630→
+   631→   631→                {/* Room code generation */}
+   632→   632→                {!isRoomActive ? (
+   633→   633→                  <button
+   634→   634→                    onClick={generateRoomCode}
+   635→   635→                    disabled={socketConnecting}
+   636→   636→                    className="w-full py-3 rounded-2xl bg-sage text-white font-medium shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+   637→   637→                  >
+   638→   638→                    {socketConnecting ? (
+   639→   639→                      <SpinnerGap size={18} className="animate-spin" />
+   640→   640→                    ) : (
+   641→   641→                      <Link size={18} weight="bold" />
+   642→   642→                    )}
+   643→   643→                    {socketConnecting ? "Connecting..." : "Generate Room Code"}
+   644→   644→                  </button>
+   645→   645→                ) : (
+   646→   646→                  <div className="space-y-3">
+   647→   647→                    {/* Room code display */}
+   648→   648→                    <div className="flex items-center justify-center gap-3 p-4 rounded-2xl bg-sage/10 border border-sage/20">
+   649→   649→                      <div className={`w-3 h-3 rounded-full animate-pulse ${socketConnected ? "bg-sage" : "bg-yellow-500"}`} />
+   650→   650→                      <span className="text-sm text-muted-foreground">
+   651→   651→                        Room Code:
+   652→   652→                      </span>
+   653→   653→                      <span className="text-2xl font-bold font-serif text-charcoal tracking-widest">
+   654→   654→                        {roomCode}
+   655→   655→                      </span>
+   656→   656→                      <button
+   657→   657→                        onClick={() => navigator.clipboard.writeText(roomCode)}
+   658→   658→                        className="w-8 h-8 rounded-full bg-sage/20 flex items-center justify-center hover:bg-sage/30 transition-all active:scale-90"
+   659→   659→                      >
+   660→   660→                        <Copy size={14} weight="bold" className="text-sage" />
+   661→   661→                      </button>
+   662→   662→                    </div>
+   663→   663→
+   664→   664→                    {/* Connection status */}
+   665→   665→                    <AnimatePresence mode="wait">
+   666→   666→                      {socketConnecting && (
+   667→   667→                        <motion.div
+   668→   668→                          key="connecting"
+   669→   669→                          initial={{ opacity: 0, y: -5 }}
+   670→   670→                          animate={{ opacity: 1, y: 0 }}
+   671→   671→                          exit={{ opacity: 0, y: -5 }}
+   672→   672→                          className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-yellow-50 border border-yellow-200"
+   673→   673→                        >
+   674→   674→                          <SpinnerGap size={16} weight="bold" className="text-yellow-600 animate-spin" />
+   675→   675→                          <span className="text-xs font-medium text-yellow-700">
+   676→   676→                            Connecting to WebSocket...
+   677→   677→                          </span>
+   678→   678→                        </motion.div>
+   679→   679→                      )}
+   680→   680→
+   681→   681→                      {socketConnected && !socketConnecting && (
+   682→   682→                        <motion.div
+   683→   683→                          key="connected"
+   684→   684→                          initial={{ opacity: 0, y: -5 }}
+   685→   685→                          animate={{ opacity: 1, y: 0 }}
+   686→   686→                          exit={{ opacity: 0, y: -5 }}
+   687→   687→                          className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sage/10 border border-sage/30"
+   688→   688→                        >
+   689→   689→                          <WifiHigh size={16} weight="fill" className="text-sage" />
+   690→   690→                          <span className="text-xs font-medium text-sage">
+   691→   691→                            Connected — Waiting for subtitles from extension
+   692→   692→                          </span>
+   693→   693→                        </motion.div>
+   694→   694→                      )}
+   695→   695→
+   696→   696→                      {!socketConnected && !socketConnecting && connectionError && (
+   697→   697→                        <motion.div
+   698→   698→                          key="error"
+   699→   699→                          initial={{ opacity: 0, y: -5 }}
+   700→   700→                          animate={{ opacity: 1, y: 0 }}
+   701→   701→                          exit={{ opacity: 0, y: -5 }}
+   702→   702→                          className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-50 border border-red-200"
+   703→   703→                        >
+   704→   704→                          <WifiSlash size={16} weight="fill" className="text-red-500" />
+   705→   705→                          <span className="text-xs font-medium text-red-600">
+   706→   706→                            {connectionError}
+   707→   707→                          </span>
+   708→   708→                        </motion.div>
+   709→   709→                      )}
+   710→   710→
+   711→   711→                      {!socketConnected && !socketConnecting && !connectionError && roomCode === "SRT-LOADED" && (
+   712→   712→                        <motion.div
+   713→   713→                          key="srt"
+   714→   714→                          initial={{ opacity: 0, y: -5 }}
+   715→   715→                          animate={{ opacity: 1, y: 0 }}
+   716→   716→                          exit={{ opacity: 0, y: -5 }}
+   717→   717→                          className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sage/10 border border-sage/30"
+   718→   718→                        >
+   719→   719→                          <WifiHigh size={16} weight="fill" className="text-sage" />
+   720→   720→                          <span className="text-xs font-medium text-sage">
+   721→   721→                            SRT file loaded — use the Subtitle Player below
+   722→   722→                          </span>
+   723→   723→                        </motion.div>
+   724→   724→                      )}
+   725→   725→                    </AnimatePresence>
+   726→   726→
+   727→   727→                    <button
+   728→   728→                      onClick={disconnectRoom}
+   729→   729→                      className="w-full py-2.5 rounded-2xl bg-secondary text-xs font-medium text-muted-foreground hover:bg-secondary/80 transition-all active:scale-[0.98]"
+   730→   730→                    >
+   731→   731→                      Disconnect Room
+   732→   732→                    </button>
+   733→   733→                  </div>
+   734→   734→                )}
+   735→   735→              </div>
+   736→   736→            </motion.div>
+   737→   737→          )}
+   738→   738→        </AnimatePresence>
+   739→   739→      </motion.div>
+   740→   740→
+   741→   741→      {/* Subtitle player (for SRT files) */}
+   742→   742→      {subtitles.length > 0 && (
+   743→   743→        <motion.div
+   744→   744→          className="p-6 rounded-3xl bg-card shadow-xl border border-border/50"
+   745→   745→          initial={{ opacity: 0, y: 20 }}
+   746→   746→          animate={{ opacity: 1, y: 0 }}
+   747→   747→        >
+   748→   748→          <div className="flex items-center justify-between mb-4">
+   749→   749→            <h3 className="text-base font-bold text-charcoal font-serif">
+   750→   750→              Subtitle Player
+   751→   751→            </h3>
+   752→   752→            <span className="text-sm text-muted-foreground">
+   753→   753→              {currentSubIndex + 1} / {subtitles.length}
+   754→   754→            </span>
+   755→   755→          </div>
+   756→   756→
+   757→   757→          <div className="h-2 rounded-full bg-secondary mb-4 overflow-hidden">
+   758→   758→            <motion.div
+   759→   759→              className="h-full rounded-full bg-coral"
+   760→   760→              animate={{
+   761→   761→                width: `${((currentSubIndex + 1) / subtitles.length) * 100}%`,
+   762→   762→              }}
+   763→   763→            />
+   764→   764→          </div>
+   765→   765→
+   766→   766→          <div className="flex items-center justify-center gap-4 mb-4">
+   767→   767→            <button
+   768→   768→              onClick={() => setCurrentSubIndex((prev) => Math.max(0, prev - 1))}
+   769→   769→              className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all active:scale-90"
+   770→   770→            >
+   771→   771→              <SkipForward size={20} weight="bold" className="text-charcoal rotate-180" />
+   772→   772→            </button>
+   773→   773→            <button
+   774→   774→              onClick={() => setIsPlaying(!isPlaying)}
+   775→   775→              className="w-14 h-14 rounded-full bg-coral text-white flex items-center justify-center shadow-lg hover:shadow-xl transition-all active:scale-90"
+   776→   776→            >
+   777→   777→              {isPlaying ? (
+   778→   778→                <Pause size={24} weight="fill" />
+   779→   779→              ) : (
+   780→   780→                <Play size={24} weight="fill" />
+   781→   781→              )}
+   782→   782→            </button>
+   783→   783→            <button
+   784→   784→              onClick={() => setCurrentSubIndex((prev) => Math.min(subtitles.length - 1, prev + 1))}
+   785→   785→              className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all active:scale-90"
+   786→   786→            >
+   787→   787→              <SkipForward size={20} weight="bold" className="text-charcoal" />
+   788→   788→            </button>
+   789→   789→          </div>
+   790→   790→
+   791→   791→          {subtitles[currentSubIndex] && (
+   792→   792→            <div className="p-4 rounded-2xl bg-secondary/50 text-center">
+   793→   793→              <p className="text-base text-charcoal leading-relaxed">
+   794→   794→                {subtitles[currentSubIndex].text}
+   795→   795→              </p>
+   796→   796→            </div>
+   797→   797→          )}
+   798→   798→        </motion.div>
+   799→   799→      )}
+   800→   800→
+   801→   801→      {/* Translating indicator */}
+   802→   802→      {isTranslating && (
+   803→   803→        <motion.div
+   804→   804→          initial={{ opacity: 0, y: 10 }}
+   805→   805→          animate={{ opacity: 1, y: 0 }}
+   806→   806→          className="fixed bottom-48 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2 rounded-full glass-card shadow-lg"
+   807→   807→        >
+   808→   808→          <SpinnerGap size={14} className="text-coral animate-spin" />
+   809→   809→          <span className="text-xs font-medium text-charcoal">
+   810→   810→            Translating with AI...
+   811→   811→          </span>
+   812→   812→        </motion.div>
+   813→   813→      )}
+   814→   814→
+   815→   815→      {/* Dynamic Island */}
+   816→   816→      <DynamicIsland
+   817→   817→        subtitle={subtitle}
+   818→   818→        expanded={isExpanded}
+   819→   819→        onToggleExpand={() => setIsExpanded(!isExpanded)}
+   820→   820→        onDismiss={handleDismiss}
+   821→   821→        onSave={handleSave}
+   822→   822→      />
+   823→   823→    </div>
+   824→   824→  );
+   825→   825→}
+   826→   826→
