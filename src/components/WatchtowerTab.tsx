@@ -10,7 +10,12 @@ import {
   Play,
   Pause,
   SkipForward,
+  PuzzlePiece,
+  Globe,
+  ArrowRight,
   CheckCircle,
+  Info,
+  DownloadSimple,
 } from "@phosphor-icons/react";
 import DynamicIsland from "@/components/DynamicIsland";
 import { useGameStore } from "@/lib/game-state";
@@ -30,6 +35,7 @@ export default function WatchtowerTab() {
   const [currentSubIndex, setCurrentSubIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [showExtensionGuide, setShowExtensionGuide] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const addXP = useGameStore((s) => s.addXP);
@@ -100,7 +106,6 @@ export default function WatchtowerTab() {
   useEffect(() => {
     if (subtitles.length > 0 && currentSubIndex < subtitles.length) {
       const sub = subtitles[currentSubIndex];
-      // Create mock translation for the subtitle text
       setSubtitle({
         original: sub.text,
         directTranslation: `[${sub.text}]`,
@@ -138,10 +143,10 @@ export default function WatchtowerTab() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      {/* Room code section */}
+    <div className="flex flex-col gap-4 h-full overflow-y-auto custom-scrollbar pb-4">
+      {/* Header card */}
       <div className="p-6 rounded-3xl bg-card shadow-xl border border-border/50">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-2">
           <div className="w-12 h-12 rounded-2xl bg-coral/10 flex items-center justify-center">
             <Television size={24} weight="duotone" className="text-coral" />
           </div>
@@ -150,16 +155,130 @@ export default function WatchtowerTab() {
               Watchtower Mode
             </h2>
             <p className="text-xs text-muted-foreground">
-              Sync subtitles from your shows
+              Learn Japanese while watching shows
+            </p>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Sync subtitles from Netflix &amp; YouTube using our Chrome Extension.
+          Words auto-translate as you watch!
+        </p>
+      </div>
+
+      {/* ─── Chrome Extension Setup Guide ─── */}
+      <motion.div
+        className="p-6 rounded-3xl bg-gradient-to-br from-coral/5 to-butter/10 shadow-xl border border-coral/20"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+      >
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-8 h-8 rounded-xl bg-coral/15 flex items-center justify-center">
+            <PuzzlePiece size={18} weight="fill" className="text-coral" />
+          </div>
+          <div>
+            <h3 className="font-serif text-base font-bold text-charcoal">
+              Chrome Extension Setup
+            </h3>
+            <p className="text-[10px] text-muted-foreground">
+              Required for live subtitle sync
             </p>
           </div>
         </div>
 
+        {showExtensionGuide ? (
+          <div className="space-y-3">
+            {/* Step 1 */}
+            <div className="flex items-start gap-3">
+              <div className="w-7 h-7 rounded-full bg-coral text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                1
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-charcoal">
+                  Install the Extension
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  The <span className="font-medium text-coral">LinguaScout Subtitle Sync</span> extension is included in the project under{" "}
+                  <code className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono">browser-extension/</code>
+                </p>
+                <div className="mt-2 p-3 rounded-2xl bg-secondary/60 space-y-1.5">
+                  <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+                    <ArrowRight size={10} weight="bold" className="text-coral shrink-0 mt-0.5" />
+                    Open Chrome → go to <code className="px-1 py-0.5 rounded bg-card text-[10px] font-mono">chrome://extensions</code>
+                  </p>
+                  <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+                    <ArrowRight size={10} weight="bold" className="text-coral shrink-0 mt-0.5" />
+                    Enable <span className="font-medium">Developer mode</span> (top right toggle)
+                  </p>
+                  <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+                    <ArrowRight size={10} weight="bold" className="text-coral shrink-0 mt-0.5" />
+                    Click <span className="font-medium">&quot;Load unpacked&quot;</span> and select the <code className="px-1 py-0.5 rounded bg-card text-[10px] font-mono">browser-extension/</code> folder
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="flex items-start gap-3">
+              <div className="w-7 h-7 rounded-full bg-coral text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                2
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-charcoal">
+                  Generate a Room Code
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Click the button below to create a unique sync room
+                </p>
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="flex items-start gap-3">
+              <div className="w-7 h-7 rounded-full bg-coral text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                3
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-charcoal">
+                  Connect &amp; Watch
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Open Netflix/YouTube with Japanese subtitles. Click the extension icon, enter the room code, and start learning!
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowExtensionGuide(false)}
+              className="w-full py-2.5 rounded-2xl bg-secondary text-xs font-medium text-muted-foreground hover:bg-secondary/80 transition-all active:scale-[0.98] flex items-center justify-center gap-1"
+            >
+              <CheckCircle size={12} weight="fill" className="text-sage" />
+              Got it — let&apos;s start
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 p-3 rounded-2xl bg-sage/10">
+            <CheckCircle size={16} weight="fill" className="text-sage shrink-0" />
+            <p className="text-xs text-sage font-medium">
+              Extension guide loaded. Generate a room code to begin syncing!
+            </p>
+            <button
+              onClick={() => setShowExtensionGuide(true)}
+              className="ml-auto text-xs text-muted-foreground hover:text-coral transition-colors"
+            >
+              Re-show
+            </button>
+          </div>
+        )}
+      </motion.div>
+
+      {/* ─── Room Code Section ─── */}
+      <div className="p-6 rounded-3xl bg-card shadow-xl border border-border/50">
         {!isRoomActive ? (
           <div className="space-y-3">
             <button
               onClick={generateRoomCode}
-              className="w-full py-3 rounded-2xl bg-coral text-white font-medium shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+              className="w-full py-3.5 rounded-2xl bg-coral text-white font-medium shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
             >
               <Link size={18} weight="bold" />
               Generate Room Code
@@ -174,7 +293,7 @@ export default function WatchtowerTab() {
                 className="text-muted-foreground"
               />
               <span className="text-sm font-medium text-muted-foreground">
-                {isUploading ? "Parsing..." : "Upload .SRT File"}
+                {isUploading ? "Parsing..." : "Upload .SRT File (no extension needed)"}
               </span>
               <input
                 type="file"
@@ -201,9 +320,17 @@ export default function WatchtowerTab() {
                 <Copy size={14} weight="bold" className="text-sage" />
               </button>
             </div>
-            <p className="text-xs text-center text-muted-foreground">
-              Enter this code in the Chrome Extension to sync subtitles
-            </p>
+
+            {/* Extension connection hint */}
+            <div className="p-3 rounded-2xl bg-coral/5 border border-coral/10">
+              <p className="text-xs text-muted-foreground flex items-start gap-2">
+                <Info size={14} weight="fill" className="text-coral shrink-0 mt-0.5" />
+                <span>
+                  Enter this code in the <span className="font-medium text-coral">LinguaScout extension popup</span> on Netflix or YouTube. Make sure Japanese subtitles are turned on in the video player.
+                </span>
+              </p>
+            </div>
+
             <button
               onClick={() => {
                 setIsRoomActive(false);
@@ -214,7 +341,7 @@ export default function WatchtowerTab() {
               }}
               className="w-full py-2 rounded-xl bg-secondary text-sm font-medium text-muted-foreground hover:bg-secondary/80 transition-all active:scale-[0.98]"
             >
-              Disconnect
+              Disconnect Room
             </button>
           </div>
         )}
@@ -290,47 +417,6 @@ export default function WatchtowerTab() {
               </p>
             </div>
           )}
-        </motion.div>
-      )}
-
-      {/* Instructions for Chrome Extension */}
-      {isRoomActive && subtitles.length === 0 && (
-        <motion.div
-          className="p-6 rounded-3xl bg-card shadow-xl border border-border/50"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-xl bg-butter/20 flex items-center justify-center shrink-0 mt-0.5">
-              <Television size={16} weight="fill" className="text-butter" />
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-sm font-bold text-charcoal font-serif">
-                How to Sync
-              </h3>
-              <div className="space-y-1.5">
-                <p className="text-xs text-muted-foreground flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-coral/10 text-coral flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
-                    1
-                  </span>
-                  Open Netflix or YouTube in your browser
-                </p>
-                <p className="text-xs text-muted-foreground flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-coral/10 text-coral flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
-                    2
-                  </span>
-                  Start a video with subtitles enabled
-                </p>
-                <p className="text-xs text-muted-foreground flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-coral/10 text-coral flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
-                    3
-                  </span>
-                  Enter room code in the Chrome Extension popup
-                </p>
-              </div>
-            </div>
-          </div>
         </motion.div>
       )}
 

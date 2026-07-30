@@ -12,17 +12,18 @@ interface ScanRequestBody {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ScanRequestBody;
-    const { language } = body;
 
-    // Simulate processing delay for nice UX
+    // Simulate OCR processing delay for realistic UX
     await new Promise((resolve) => setTimeout(resolve, 900));
 
-    // Return mock translation data
+    // Always return a Japanese mock translation
     const translation = getMockTranslation();
 
     return NextResponse.json({
       ...translation,
-      sourceLanguage: language || translation.sourceLanguage,
+      sourceLanguage: "ja",
+      targetLanguage: "en",
+      detectedLanguage: "ja",
       processingTime: 900,
       cached: false,
     });
@@ -39,7 +40,8 @@ export async function GET() {
   return NextResponse.json({
     status: "ok",
     endpoint: "/api/scan",
+    language: "ja",
     description:
-      "POST a base64 image to receive OCR text + translation { original, direct, romanized }",
+      "POST a base64 image to receive Japanese OCR text + English translation",
   });
 }

@@ -7,6 +7,10 @@ import {
   Brain,
   Flame,
   Trash,
+  Gear,
+  ArrowUp,
+  ArrowDown,
+  JapaneseFlag,
 } from "@phosphor-icons/react";
 import XPSprout from "@/components/XPSprout";
 import StreakCard from "@/components/StreakCard";
@@ -25,10 +29,12 @@ export default function ProfileTab() {
   const quests = useGameStore((s) => s.quests);
   const completeQuest = useGameStore((s) => s.completeQuest);
   const totalWordsLearned = useGameStore((s) => s.totalWordsLearned);
+  const todayWordsLearned = useGameStore((s) => s.todayWordsLearned);
   const resetForTesting = useGameStore((s) => s.resetForTesting);
 
   const [words, setWords] = useState<VocabularyWord[]>([]);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Load words from IndexedDB
   useEffect(() => {
@@ -45,7 +51,6 @@ export default function ProfileTab() {
 
   const handleQuizComplete = useCallback(
     (score: number, total: number) => {
-      // Add XP for quiz
       const addXP = useGameStore.getState().addXP;
       const playQuiz = useGameStore.getState().playQuiz;
       addXP(score * 5);
@@ -66,14 +71,29 @@ export default function ProfileTab() {
           >
             <User size={32} weight="duotone" className="text-coral" />
           </motion.div>
-          <div className="flex-1">
-            <h2 className="font-serif text-xl font-bold text-charcoal">
+          <div className="flex-1 min-w-0">
+            <h2 className="font-serif text-xl font-bold text-charcoal truncate">
               Language Scout
             </h2>
-            <p className="text-sm text-muted-foreground">
-              Level {level} • {totalWordsLearned} words learned
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-sm text-muted-foreground">
+                Level {level}
+              </span>
+              <span className="text-muted-foreground/40">•</span>
+              <span className="text-sm text-muted-foreground">
+                {totalWordsLearned} words
+              </span>
+              <span className="text-muted-foreground/40">•</span>
+              <span className="text-sm text-muted-foreground">🇯🇵</span>
+            </div>
           </div>
+          {/* Settings toggle */}
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="w-10 h-10 rounded-2xl bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all active:scale-90"
+          >
+            <Gear size={20} weight={showSettings ? "fill" : "regular"} className="text-muted-foreground" />
+          </button>
         </div>
 
         {/* XP Sprout */}
@@ -105,19 +125,75 @@ export default function ProfileTab() {
         {/* Quiz Button */}
         <motion.button
           onClick={() => setIsQuizOpen(true)}
-          className="w-full mt-4 py-3 rounded-2xl bg-gradient-to-r from-coral to-soft-pink text-white font-bold text-sm shadow-lg hover:shadow-xl transition-all active:scale-95"
+          className="w-full mt-4 py-3.5 rounded-2xl bg-gradient-to-r from-coral to-soft-pink text-white font-bold text-sm shadow-lg hover:shadow-xl transition-all active:scale-95"
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
-          🧠 Take the Tongue Twister Trial
+          🧠 Take the Tongue Twister Trial (🇯🇵 Japanese)
         </motion.button>
       </div>
+
+      {/* Settings Panel (collapsible) */}
+      {showSettings && (
+        <motion.div
+          className="p-6 rounded-3xl bg-card shadow-xl border border-border/50"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ type: "spring", stiffness: 260, damping: 20 }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Gear size={16} weight="fill" className="text-coral" />
+            <h3 className="font-serif text-base font-bold text-charcoal">
+              Settings
+            </h3>
+          </div>
+
+          {/* Language info */}
+          <div className="p-3 rounded-2xl bg-secondary/50 mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🇯🇵</span>
+              <div>
+                <p className="text-sm font-medium text-charcoal">
+                  Learning: Japanese
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Source: Japanese (ja) → English (en)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Storage info */}
+          <div className="p-3 rounded-2xl bg-secondary/50 mb-3">
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-charcoal">{totalWordsLearned}</span> total words scanned •{" "}
+              <span className="font-medium text-charcoal">{words.length}</span> saved in Loot Deck
+            </p>
+          </div>
+
+          {/* Reset button */}
+          <button
+            onClick={() => {
+              if (window.confirm("Reset all progress? This cannot be undone.")) {
+                resetForTesting();
+                setWords([]);
+              }
+            }}
+            className="w-full py-2.5 rounded-xl bg-destructive/10 text-xs font-medium text-destructive hover:bg-destructive/20 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+          >
+            <Trash size={12} weight="bold" />
+            Reset All Progress
+          </button>
+        </motion.div>
+      )}
 
       {/* Streak Card */}
       <StreakCard
         currentStreak={currentStreak}
         longestStreak={longestStreak}
         streakHistory={streakHistory}
+        todayWordsLearned={todayWordsLearned}
       />
 
       {/* Quest Board */}
@@ -125,15 +201,6 @@ export default function ProfileTab() {
 
       {/* Loot Deck */}
       <LootDeck words={words} onDeleteWord={handleDeleteWord} />
-
-      {/* Reset (dev) */}
-      <button
-        onClick={resetForTesting}
-        className="w-full py-2 rounded-xl bg-secondary/50 text-xs text-muted-foreground hover:bg-secondary transition-all active:scale-[0.98] flex items-center justify-center gap-1"
-      >
-        <Trash size={12} weight="bold" />
-        Reset Progress (for testing)
-      </button>
 
       {/* Level Up Modal */}
       <LevelUpModal

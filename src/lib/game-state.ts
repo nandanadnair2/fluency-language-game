@@ -28,6 +28,7 @@ export interface GameState {
 
   // Quests
   quests: Quest[];
+  lastQuestResetDate: string | null;
 
   // Actions
   addXP: (amount: number) => void;
@@ -108,6 +109,7 @@ export const useGameStore = create<GameState>()(
       lastPracticeDate: null,
       streakHistory: [],
       quests: generateDailyQuests(),
+      lastQuestResetDate: null,
 
       addXP: (amount: number) => {
         const state = get();
@@ -122,47 +124,87 @@ export const useGameStore = create<GameState>()(
       scanWord: () => {
         const state = get();
         const today = getTodayString();
-        set({
-          totalWordsLearned: state.totalWordsLearned + 1,
-          todayWordsLearned:
-            state.lastPracticeDate === today
-              ? state.todayWordsLearned + 1
-              : 1,
-        });
+
+        // Check if we need to reset for a new day
+        let newCurrentStreak = state.currentStreak;
+        let newLongestStreak = state.longestStreak;
+        let newStreakHistory = state.streakHistory;
+        let newTodayWordsLearned = state.todayWordsLearned + 1;
+        let newLastPracticeDate = state.lastPracticeDate;
+        let newQuests = state.quests;
+        let newLastQuestResetDate = state.lastQuestResetDate;
+
+        if (state.lastPracticeDate !== today) {
+          // New day! Update streak
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+          if (state.lastPracticeDate === yesterdayStr) {
+            // Consecutive day
+            newCurrentStreak = state.currentStreak + 1;
+          } else if (state.lastPracticeDate !== null) {
+            // Gap detected — restart streak
+            newCurrentStreak = 1;
+          } else {
+            // First ever practice
+            newCurrentStreak = 1;
+          }
+
+          newLongestStreak = Math.max(newCurrentStreak, state.longestStreak);
+          newLastPracticeDate = today;
+          newStreakHistory = [...state.streakHistory, today].slice(-30);
+          newTodayWordsLearned = 1; // First word of the day
+
+          // Reset quests for the new day
+          if (state.lastQuestResetDate !== today) {
+            newQuests = generateDailyQuests();
+            newLastQuestResetDate = today;
+          }
+        }
+
         // Update scan quest
-        const quests = state.quests.map((q) => {
+        newQuests = newQuests.map((q) => {
           if (q.id === "scan-5" && !q.completed) {
             const newProgress = Math.min(q.progress + 1, q.target);
             return { ...q, progress: newProgress, completed: newProgress >= q.target };
           }
           return q;
         });
+
         // Update learn quest
-        const updatedQuests = quests.map((q) => {
+        newQuests = newQuests.map((q) => {
           if (q.id === "learn-10" && !q.completed) {
             const newProgress = Math.min(q.progress + 1, q.target);
             return { ...q, progress: newProgress, completed: newProgress >= q.target };
           }
           return q;
         });
-        set({ quests: updatedQuests });
-        get().practiceToday();
+
+        set({
+          totalWordsLearned: state.totalWordsLearned + 1,
+          todayWordsLearned: newTodayWordsLearned,
+          currentStreak: newCurrentStreak,
+          longestStreak: newLongestStreak,
+          lastPracticeDate: newLastPracticeDate,
+          streakHistory: newStreakHistory,
+          quests: newQuests,
+          lastQuestResetDate: newLastQuestResetDate,
+        });
       },
 
       practiceToday: () => {
         const state = get();
         const today = getTodayString();
 
+        // Only act if this is the first practice of the day
         if (state.lastPracticeDate !== today) {
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const yesterdayStr = yesterday.toISOString().split("T")[0];
 
           let newStreak = 1;
-          if (
-            state.lastPracticeDate === yesterdayStr ||
-            state.lastPracticeDate === today
-          ) {
+          if (state.lastPracticeDate === yesterdayStr) {
             newStreak = state.currentStreak + 1;
           }
 
@@ -171,9 +213,13 @@ export const useGameStore = create<GameState>()(
             longestStreak: Math.max(newStreak, state.longestStreak),
             lastPracticeDate: today,
             streakHistory: [...state.streakHistory, today].slice(-30),
-            todayWordsLearned: 0,
-            quests: generateDailyQuests(),
+            // Don't reset todayWordsLearned here — scanWord handles it
           });
+
+          // Reset quests only if not already reset today
+          if (state.lastQuestResetDate !== today) {
+            set({ quests: generateDailyQuests(), lastQuestResetDate: today });
+          }
         }
       },
 
@@ -207,6 +253,8 @@ export const useGameStore = create<GameState>()(
         });
         set({ quests });
         get().addXP(10);
+        // Also count as a practice day
+        get().practiceToday();
       },
 
       resetForTesting: () => {
@@ -220,6 +268,7 @@ export const useGameStore = create<GameState>()(
           lastPracticeDate: null,
           streakHistory: [],
           quests: generateDailyQuests(),
+          lastQuestResetDate: null,
         });
       },
     }),

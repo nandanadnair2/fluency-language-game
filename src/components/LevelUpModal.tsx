@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Lightning,
@@ -27,56 +27,82 @@ interface QuizQuestion {
   wrongTranslations: string[];
 }
 
+// Japanese-only quiz questions
 const QUIZ_QUESTIONS: QuizQuestion[] = [
   {
-    original: "Konnichiwa",
+    original: "こんにちは",
     correctTranslation: "Hello / Good afternoon",
-    wrongTranslations: ["Goodbye", "Thank you", "Sorry"],
+    wrongTranslations: ["Goodbye", "Thank you", "Excuse me"],
   },
   {
-    original: "Arigatou gozaimasu",
+    original: "ありがとうございます",
     correctTranslation: "Thank you very much",
     wrongTranslations: ["You're welcome", "Excuse me", "Good morning"],
   },
   {
-    original: "Sumimasen",
+    original: "すみません",
     correctTranslation: "Excuse me / I'm sorry",
     wrongTranslations: ["Hello", "Thank you", "Please"],
   },
   {
-    original: "Itadakimasu",
-    correctTranslation: "Let's eat (polite)",
+    original: "いただきます",
+    correctTranslation: "Let's eat (said before meals)",
     wrongTranslations: ["Good night", "Cheers", "I'm full"],
   },
   {
-    original: "Ohayou gozaimasu",
-    correctTranslation: "Good morning",
+    original: "おはようございます",
+    correctTranslation: "Good morning (polite)",
     wrongTranslations: ["Good evening", "Good night", "Goodbye"],
   },
   {
-    original: "Merci beaucoup",
-    correctTranslation: "Thank you very much",
-    wrongTranslations: ["Hello", "Goodbye", "Please"],
+    original: "お元気ですか",
+    correctTranslation: "How are you?",
+    wrongTranslations: ["What is this?", "Thank you", "Goodbye"],
   },
   {
-    original: "Au revoir",
-    correctTranslation: "Goodbye",
-    wrongTranslations: ["Hello", "Thank you", "Good morning"],
+    original: "大丈夫です",
+    correctTranslation: "It's okay / I'm fine",
+    wrongTranslations: ["I'm tired", "I'm lost", "I'm hungry"],
   },
   {
-    original: "Gracias",
-    correctTranslation: "Thank you",
-    wrongTranslations: ["Hello", "Goodbye", "Please"],
+    original: "美味しいです",
+    correctTranslation: "It's delicious!",
+    wrongTranslations: ["It's spicy", "It's cold", "It's expensive"],
   },
   {
-    original: "Buenos días",
-    correctTranslation: "Good morning",
-    wrongTranslations: ["Good night", "Goodbye", "Thank you"],
+    original: "待ってください",
+    correctTranslation: "Please wait",
+    wrongTranslations: ["Please come", "Please go", "Please help"],
   },
   {
-    original: "Bonsoir",
-    correctTranslation: "Good evening",
-    wrongTranslations: ["Good morning", "Goodbye", "Hello"],
+    original: "駅はどこですか",
+    correctTranslation: "Where is the station?",
+    wrongTranslations: ["Where is the school?", "Where is the hospital?", "Where is the bank?"],
+  },
+  {
+    original: "分かりません",
+    correctTranslation: "I don't understand",
+    wrongTranslations: ["I know", "I think so", "Maybe"],
+  },
+  {
+    original: "お願いします",
+    correctTranslation: "Please (requesting something)",
+    wrongTranslations: ["Thank you", "Sorry", "No thanks"],
+  },
+  {
+    original: "お疲れ様です",
+    correctTranslation: "Good work / Thanks for your effort",
+    wrongTranslations: ["Good luck", "Take care", "Have fun"],
+  },
+  {
+    original: "いらっしゃいませ",
+    correctTranslation: "Welcome (shop greeting)",
+    wrongTranslations: ["Goodbye", "See you later", "Excuse me"],
+  },
+  {
+    original: "頑張ってください",
+    correctTranslation: "Do your best / Keep it up!",
+    wrongTranslations: ["Take it easy", "Give up", "Slow down"],
   },
 ];
 
@@ -84,6 +110,22 @@ interface LevelUpModalProps {
   isOpen: boolean;
   onClose: () => void;
   onQuizComplete: (score: number, total: number) => void;
+}
+
+// Deterministic shuffle (seeded by a number so it doesn't change on re-render)
+function seededShuffle(arr: string[], seed: number): string[] {
+  const shuffled = [...arr];
+  // Simple LCG pseudo-random
+  let s = seed;
+  const next = () => {
+    s = (s * 1664525 + 1013904223) & 0x7fffffff;
+    return s;
+  };
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = next() % (i + 1);
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
 export default function LevelUpModal({
@@ -100,18 +142,11 @@ export default function LevelUpModal({
   const [timer, setTimer] = useState(15);
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [shuffledQuestions, setShuffledQuestions] = useState<QuizQuestion[]>([]);
+  // Store a shuffle seed per question so options stay stable across re-renders
+  const [optionSeeds, setOptionSeeds] = useState<number[]>([]);
 
   const TOTAL_QUESTIONS = 5;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const shuffleArray = useCallback((arr: string[]): string[] => {
-    const shuffled = [...arr];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  }, []);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
@@ -139,6 +174,8 @@ export default function LevelUpModal({
       TOTAL_QUESTIONS
     );
     setShuffledQuestions(selected);
+    // Generate a stable seed for each question's options
+    setOptionSeeds(selected.map(() => Math.floor(Math.random() * 100000)));
     setCurrentQuestion(0);
     setScore(0);
     setSelectedAnswer(null);
@@ -224,13 +261,16 @@ export default function LevelUpModal({
     onClose();
   };
 
+  // Memoize options so they DON'T reshuffle on every re-render (e.g. timer tick)
   const question = shuffledQuestions[currentQuestion];
-  const options = question
-    ? shuffleArray([
-        question.correctTranslation,
-        ...question.wrongTranslations,
-      ])
-    : [];
+  const options = useMemo(() => {
+    if (!question || optionSeeds.length === 0) return [];
+    const seed = optionSeeds[currentQuestion] ?? 42;
+    return seededShuffle(
+      [question.correctTranslation, ...question.wrongTranslations],
+      seed
+    );
+  }, [question, optionSeeds, currentQuestion]);
 
   if (!isOpen || shuffledQuestions.length === 0) return null;
 
@@ -253,7 +293,7 @@ export default function LevelUpModal({
 
         {/* Modal */}
         <motion.div
-          className="relative w-full max-w-sm rounded-3xl bg-cream p-6 shadow-2xl"
+          className="relative w-full max-w-sm rounded-3xl bg-cream p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
           initial={{ scale: 0.8, y: 20 }}
           animate={{ scale: 1, y: 0 }}
           exit={{ scale: 0.8, y: 20 }}
@@ -262,7 +302,7 @@ export default function LevelUpModal({
           {/* Close button */}
           <button
             onClick={handleClose}
-            className="absolute top-4 right-4 w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center transition-all active:scale-90"
+            className="absolute top-4 right-4 w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center transition-all active:scale-90 z-10"
           >
             <XCircle size={20} weight="fill" className="text-muted-foreground" />
           </button>
@@ -284,6 +324,9 @@ export default function LevelUpModal({
               <h2 className="font-serif text-2xl font-bold text-charcoal mb-2">
                 Tongue Twister Trial
               </h2>
+              <p className="text-muted-foreground mb-1 text-sm">
+                🇯🇵 Japanese Quiz Results
+              </p>
               <p className="text-muted-foreground mb-4">
                 You scored{" "}
                 <span className="font-bold text-coral">
@@ -318,7 +361,7 @@ export default function LevelUpModal({
                   <Sparkle size={20} weight="fill" className="text-coral" />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Question {currentQuestion + 1} of {shuffledQuestions.length}
+                  🇯🇵 Japanese • Question {currentQuestion + 1} of {shuffledQuestions.length}
                 </p>
               </div>
 
@@ -380,7 +423,7 @@ export default function LevelUpModal({
 
                   return (
                     <motion.button
-                      key={i}
+                      key={`${currentQuestion}-${i}`}
                       onClick={() => handleAnswer(option)}
                       className={`w-full p-3 rounded-2xl text-sm font-medium text-charcoal text-left transition-all border border-transparent active:scale-[0.98] ${bgColor}`}
                       disabled={showResult}

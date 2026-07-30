@@ -110,3 +110,24 @@ Stage Summary:
 - Fixed runtime issues: Phosphor icon names, confetti SSR, missing useRef import
 - WebSocket service running, Chrome Extension created
 - MVP is complete and browser-verified
+
+---
+Task ID: bugfix-1-5
+Agent: main-developer
+Task: Fix 5 reported bugs in LinguaScout MVP
+
+Work Log:
+- Bug 1 (Scanner): Replaced all French/Spanish mock data with 20 Japanese-only words in translation-utils.ts. Updated scan API to always return ja→en. Updated quiz to be Japanese-only (15 questions).
+- Bug 2 (Chrome Extension): Completely rewrote WatchtowerTab.tsx with prominent 3-step Chrome Extension setup guide, install instructions (chrome://extensions → Developer mode → Load unpacked), Netflix/YouTube sync instructions, room code connection hints.
+- Bug 3 (Tongue Twister shuffle): Fixed options reshuffling every second by implementing seeded deterministic shuffle (LCG pseudo-random) with useMemo. Options now stay stable across timer re-renders. Key changes: added optionSeeds state array, seededShuffle function, useMemo for options computation.
+- Bug 4 (Streak/Daily Harvest): Rewrote game-state.ts scanWord logic to handle day transitions atomically (no more resetting todayWordsLearned to 0). Added lastQuestResetDate to prevent double quest resets. Added todayWordsLearned prop to StreakCard. Created "Today's Harvest" section with daily word count and progress bar (10 words/day goal).
+- Bug 5 (Profile/Settings): Added collapsible Settings panel to ProfileTab with gear icon toggle, language info (Japanese → English), storage stats, and Reset All Progress button with confirmation dialog.
+- All lint checks pass, all compilation successful, no runtime errors.
+
+Stage Summary:
+- Scanner: Japanese-only, 20 mock words with Japanese characters, romanization, English translations
+- Watchtower: Chrome Extension setup guide with 3-step install instructions
+- Tongue Twister: Options stable (seeded shuffle + useMemo), no reshuffling
+- Streak: Working correctly with streakHistory, daily harvest counter, goal progress bar
+- Profile: Accessible with settings panel, language info, reset functionality
+- All fixes verified via Agent Browser: demo scan → Japanese, save → streak updates, quiz → stable options, profile → all sections visible
