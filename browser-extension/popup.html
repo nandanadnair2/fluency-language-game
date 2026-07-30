@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=360, initial-scale=1.0">
+  <meta name="viewport" content="width=420, initial-scale=1.0">
   <title>LinguaScout</title>
   <style>
     /* ---- Cozy Warm Palette ---- */
@@ -21,8 +21,8 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      width: 340px;
-      min-height: 320px;
+      width: 400px;
+      min-height: 480px;
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       background: var(--cream);
       color: var(--charcoal);
@@ -33,26 +33,26 @@
     /* Header */
     .header {
       background: linear-gradient(135deg, var(--coral) 0%, var(--coral-dark) 100%);
-      padding: 18px 20px 14px;
+      padding: 20px 24px 16px;
       border-radius: 0 0 16px 16px;
       text-align: center;
       margin-bottom: 16px;
     }
     .header h1 {
-      font-size: 20px;
+      font-size: 22px;
       font-weight: 700;
       color: #fff;
       letter-spacing: 0.5px;
     }
     .header p {
-      font-size: 12px;
-      color: rgba(255,255,255,0.8);
-      margin-top: 2px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.85);
+      margin-top: 4px;
     }
 
     /* Main content */
     .content {
-      padding: 0 20px 20px;
+      padding: 0 24px 20px;
       flex: 1;
       display: flex;
       flex-direction: column;
@@ -62,9 +62,10 @@
     /* Room Code Section */
     .room-section {
       background: var(--card-bg);
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: 0 2px 8px var(--shadow);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 2px 10px var(--shadow);
+      border: 1px solid rgba(61, 56, 50, 0.06);
     }
     .room-section label {
       display: block;
@@ -72,47 +73,48 @@
       font-weight: 600;
       color: var(--warm-gray);
       text-transform: uppercase;
-      letter-spacing: 0.8px;
-      margin-bottom: 8px;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
     }
     .input-row {
       display: flex;
-      gap: 8px;
+      gap: 10px;
     }
     .room-input {
       flex: 1;
-      padding: 10px 14px;
+      padding: 12px 16px;
       border: 2px solid #EDE5D8;
-      border-radius: 8px;
-      font-size: 18px;
+      border-radius: 10px;
+      font-size: 22px;
       font-weight: 600;
       text-align: center;
-      letter-spacing: 6px;
+      letter-spacing: 8px;
       color: var(--charcoal);
       background: #fff;
       outline: none;
       transition: border-color 0.2s;
     }
     .room-input::placeholder {
-      letter-spacing: 2px;
+      letter-spacing: 3px;
       font-weight: 400;
-      font-size: 14px;
+      font-size: 15px;
       color: #C9C0B3;
     }
     .room-input:focus {
       border-color: var(--coral);
     }
     .connect-btn {
-      padding: 10px 18px;
+      padding: 12px 20px;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       background: var(--sage);
       color: #fff;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.2s, transform 0.1s;
       white-space: nowrap;
+      min-width: 90px;
     }
     .connect-btn:hover { background: var(--sage-dark); }
     .connect-btn:active { transform: scale(0.97); }
@@ -127,8 +129,8 @@
     .status-bar {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 13px;
+      gap: 10px;
+      font-size: 14px;
     }
     .status-dot {
       width: 10px;
@@ -140,53 +142,89 @@
     }
     .status-dot.connected {
       background: var(--sage);
-      box-shadow: 0 0 6px rgba(139, 168, 136, 0.5);
+      box-shadow: 0 0 8px rgba(139, 168, 136, 0.5);
     }
     .status-dot.error {
       background: var(--coral);
-      box-shadow: 0 0 6px rgba(232, 115, 90, 0.4);
+      box-shadow: 0 0 8px rgba(232, 115, 90, 0.4);
+    }
+    .status-dot.connecting {
+      background: #F0C27A;
+      box-shadow: 0 0 8px rgba(240, 194, 122, 0.5);
+      animation: pulse 1s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
     .status-text {
       color: var(--warm-gray);
+      font-size: 14px;
+    }
+    .status-text.error-text {
+      color: var(--coral);
+      font-weight: 600;
+    }
+
+    /* Connection hint */
+    .connection-hint {
+      background: #FFF8F0;
+      border: 1px solid #F5E6D3;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--warm-gray);
+      line-height: 1.5;
+    }
+    .connection-hint strong {
+      color: var(--coral);
     }
 
     /* Subtitle Preview */
     .subtitle-section {
       background: var(--card-bg);
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: 0 2px 8px var(--shadow);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 2px 10px var(--shadow);
+      border: 1px solid rgba(61, 56, 50, 0.06);
       flex: 1;
-      min-height: 80px;
+      min-height: 120px;
+      display: flex;
+      flex-direction: column;
     }
     .subtitle-section .section-label {
       font-size: 11px;
       font-weight: 600;
       color: var(--warm-gray);
       text-transform: uppercase;
-      letter-spacing: 0.8px;
-      margin-bottom: 8px;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+      flex-shrink: 0;
     }
     .subtitle-preview {
-      font-size: 14px;
-      line-height: 1.5;
+      font-size: 16px;
+      line-height: 1.6;
       color: var(--charcoal);
-      min-height: 42px;
+      flex: 1;
       display: flex;
       align-items: center;
+      overflow-y: auto;
+      max-height: 200px;
+      word-break: break-word;
     }
     .subtitle-preview.empty {
       color: #C9C0B3;
       font-style: italic;
-      font-size: 13px;
+      font-size: 14px;
     }
 
     /* Footer */
     .footer {
       text-align: center;
-      padding: 10px 20px 14px;
-      font-size: 11px;
+      padding: 12px 24px 16px;
+      font-size: 12px;
       color: var(--warm-gray);
+      line-height: 1.5;
     }
   </style>
 </head>
@@ -194,7 +232,7 @@
 
   <div class="header">
     <h1>🌿 LinguaScout</h1>
-    <p>Subtitle sync for language learners</p>
+    <p>Subtitle sync for Japanese learners</p>
   </div>
 
   <div class="content">
@@ -220,6 +258,11 @@
       <span id="statusText" class="status-text">Not connected</span>
     </div>
 
+    <!-- Connection hint (shown when not connected) -->
+    <div id="connectionHint" class="connection-hint">
+      <strong>Tip:</strong> Make sure the LinguaScout WebSocket server is running on port 3004. Open the web app's Watchtower tab to generate a room code, then enter it here.
+    </div>
+
     <!-- Subtitle Preview -->
     <div class="subtitle-section">
       <div class="section-label">Latest Subtitle</div>
@@ -230,7 +273,7 @@
   </div>
 
   <div class="footer">
-    Open YouTube or Netflix, enable captions, and connect to a room.
+    Open YouTube or Netflix → enable Japanese captions → connect to start syncing.
   </div>
 
   <script src="popup.js"></script>

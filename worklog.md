@@ -131,3 +131,25 @@ Stage Summary:
 - Streak: Working correctly with streakHistory, daily harvest counter, goal progress bar
 - Profile: Accessible with settings panel, language info, reset functionality
 - All fixes verified via Agent Browser: demo scan → Japanese, save → streak updates, quiz → stable options, profile → all sections visible
+
+---
+Task ID: bugfix-6-7
+Agent: main-developer
+Task: Fix Scanner data mismatch and Chrome Extension connection/scraping issues
+
+Work Log:
+- Bug 6 (Scanner data mismatch): Root cause was stale API responses from rapid scans + nested AnimatePresence exit/enter overlap. Fixed by:
+  - Adding scanCounterRef to ScannerTab — only accept API response if it's the latest scan request
+  - Removed outer AnimatePresence from ScannerTab (TranslationCards has its own internal one)
+  - Added composite key using original+translation+romanized for proper animation re-triggering
+  - TranslationCards now uses `key={translation.original::translation.directTranslation::translation.romanized}` ensuring complete data swap
+  - Demo Scan button now disabled during scanning to prevent double-fire
+- Bug 7 (Chrome Extension): Multiple issues fixed:
+  - content.js: Replaced overly broad `[class*="caption"]` selector with specific `.ytp-caption-segment` (YouTube) and `.player-timedtext-text` (Netflix). Added isSubtitleElement() to filter out buttons/links/forms. Added looksLikeSubtitle() to reject page metadata (view counts, timestamps, "subscribe", "settings", etc.). Added CJK character detection.
+  - popup.html: Increased popup size from 340px→400px wide, 320px→480px min-height. Larger fonts (14px→16px subtitle text, 18px→22px room code). Added connection hint section with server info. Added max-height scrolling on subtitle preview. Added connecting state with pulsing dot animation.
+  - popup.js: Added connection timeout (5s) with clear error message. Added cancel-connect button state. Added reconnect delay (5s instead of 3s). Added room code auto-save on input. Added connection hint visibility management. Better state machine: idle→connecting→connected/error/disconnected.
+- All lint checks pass, all compilation successful
+
+Stage Summary:
+- Scanner: Data mismatch fixed — scan counter prevents stale responses, composite keys ensure proper animation. Tested: rapid double-scan shows consistent original/translation/romanization.
+- Chrome Extension: Content script now only extracts actual subtitle text (not YouTube page metadata). Popup is larger and more readable with proper connection status handling.

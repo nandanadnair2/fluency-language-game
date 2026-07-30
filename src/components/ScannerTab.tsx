@@ -1,12 +1,9 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useState, useCallback, useRef } from "react";
 import {
   Camera,
   Image as ImageIcon,
-  Check,
-  Lightning,
 } from "@phosphor-icons/react";
 import CameraScanner from "@/components/CameraScanner";
 import TranslationCards from "@/components/TranslationCards";
@@ -21,11 +18,17 @@ export default function ScannerTab() {
   const [showXPBadge, setShowXPBadge] = useState(false);
   const [detected, setDetected] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const scanCounterRef = useRef(0); // Prevent stale responses
 
   const addXP = useGameStore((s) => s.addXP);
   const scanWord = useGameStore((s) => s.scanWord);
 
-  const handleCapture = useCallback(async (imageData: string) => {
+  // Core scan function — validates scan counter to prevent stale responses
+  const performScan = useCallback(async (imageData: string) => {
+    const currentScan = ++scanCounterRef.current;
+    setIsScanning(true);
+    setDetected(false);
+
     try {
       const res = await fetch("/api/scan", {
         method: "POST",
@@ -33,22 +36,29 @@ export default function ScannerTab() {
         body: JSON.stringify({ image: imageData, language: "ja" }),
       });
       const data = await res.json();
-      if (data.original) {
-        setDetected(true);
-        setTimeout(() => setDetected(false), 2000);
+
+      // Only update if this is still the latest scan (no race condition)
+      if (data.original && currentScan === scanCounterRef.current) {
         setTranslation(data);
+        setDetected(true);
+        setTimeout(() => setDetected(false), 3000);
       }
     } catch (err) {
       console.error("Scan failed:", err);
     } finally {
-      setIsScanning(false);
+      if (currentScan === scanCounterRef.current) {
+        setIsScanning(false);
+      }
     }
   }, []);
 
+  const handleCapture = useCallback((imageData: string) => {
+    performScan(imageData);
+  }, [performScan]);
+
   const handleSaveWord = useCallback(
     async (word: TranslationResponse) => {
-      // Save to IndexedDB
-      const { saveWord, db } = await import("@/lib/db-vocabulary");
+      const { saveWord } = await import("@/lib/db-vocabulary");
       const id = await saveWord({
         original: word.original,
         directTranslation: word.directTranslation,
@@ -60,8 +70,6 @@ export default function ScannerTab() {
         reviewCount: 1,
       });
       setSavedWordId(id as number);
-
-      // Award XP
       addXP(5);
       scanWord();
       setShowXPBadge(true);
@@ -79,28 +87,22 @@ export default function ScannerTab() {
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64 = event.target?.result as string;
-        setIsScanning(true);
-        try {
-          const res = await fetch("/api/scan", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image: base64, language: "ja" }),
-          });
-          const data = await res.json();
-          if (data.original) {
-            setTranslation(data);
-          }
-        } catch (err) {
-          console.error("Upload scan failed:", err);
-        } finally {
-          setIsScanning(false);
-          setIsUploading(false);
-        }
+        performScan(base64);
+        setIsUploading(false);
       };
       reader.readAsDataURL(file);
     },
-    []
+    [performScan]
   );
+
+  const handleDemoScan = useCallback(() => {
+    performScan("demo");
+  }, [performScan]);
+
+  // Build a stable key from all translation fields to prevent stale renders
+  const translationKey = translation
+    ? `${translation.original}|${translation.directTranslation}|${translation.romanized}`
+    : "";
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -114,7 +116,7 @@ export default function ScannerTab() {
         />
       </div>
 
-      {/* Upload fallback */}
+      {/* Upload fallback + Demo Scan */}
       <div className="flex items-center gap-3 px-2">
         <label className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-secondary hover:bg-secondary/80 cursor-pointer transition-all active:scale-[0.98]">
           <ImageIcon size={18} weight="duotone" className="text-muted-foreground" />
@@ -129,45 +131,26 @@ export default function ScannerTab() {
           />
         </label>
         <button
-          onClick={() => {
-            // Quick demo: generate mock translation
-            setIsScanning(true);
-            setTimeout(async () => {
-              const res = await fetch("/api/scan", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ image: "demo", language: "ja" }),
-              });
-              const data = await res.json();
-              if (data.original) {
-                setTranslation(data);
-              }
-              setIsScanning(false);
-            }, 800);
-          }}
-          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-coral/10 hover:bg-coral/20 cursor-pointer transition-all active:scale-[0.98]"
+          onClick={handleDemoScan}
+          disabled={isScanning}
+          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-coral/10 hover:bg-coral/20 cursor-pointer transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Camera size={18} weight="duotone" className="text-coral" />
-          <span className="text-sm font-medium text-coral">Demo Scan</span>
+          <span className="text-sm font-medium text-coral">
+            {isScanning ? "Scanning..." : "Demo Scan"}
+          </span>
         </button>
       </div>
 
-      {/* Translation Cards */}
-      <AnimatePresence mode="wait">
-        {translation && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-          >
-            <TranslationCards
-              translation={translation}
-              onSaveWord={handleSaveWord}
-              savedWordId={savedWordId}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Translation Cards — no outer AnimatePresence, let the inner one handle it */}
+      {translation && (
+        <TranslationCards
+          key={translationKey}
+          translation={translation}
+          onSaveWord={handleSaveWord}
+          savedWordId={savedWordId}
+        />
+      )}
 
       {/* XP Badge */}
       <XPBadge show={showXPBadge} amount={5} />

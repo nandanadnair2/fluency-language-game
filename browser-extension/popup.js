@@ -13,39 +13,56 @@
   const statusDot       = document.getElementById("statusDot");
   const statusText      = document.getElementById("statusText");
   const subtitlePreview = document.getElementById("subtitlePreview");
+  const connectionHint  = document.getElementById("connectionHint");
 
   // ---- State ----
   const WS_URL = "ws://localhost:3004/";
   let ws = null;
   let roomCode = "";
   let isConnected = false;
+  let isConnecting = false;
   let lastSentText = "";
   let storagePollTimer = null;
   let reconnectTimer = null;
   let intentionalClose = false;
 
   // ---- UI Helpers ----
-  function setStatus(state) {
+  function setStatus(state, message) {
     statusDot.className = "status-dot";
+
     if (state === "connected") {
       statusDot.classList.add("connected");
-      statusText.textContent = `Connected to room ${roomCode}`;
+      statusText.textContent = message || `Connected to room ${roomCode}`;
+      statusText.className = "status-text";
       connectBtn.textContent = "Disconnect";
       connectBtn.classList.add("connected");
+      connectionHint.style.display = "none";
     } else if (state === "error") {
       statusDot.classList.add("error");
-      statusText.textContent = "Connection failed";
+      statusText.textContent = message || "Connection failed";
+      statusText.className = "status-text error-text";
       connectBtn.textContent = "Connect";
       connectBtn.classList.remove("connected");
+      connectionHint.style.display = "block";
+    } else if (state === "connecting") {
+      statusDot.classList.add("connecting");
+      statusText.textContent = message || "Connecting…";
+      statusText.className = "status-text";
+      connectBtn.textContent = "Cancel";
+      connectBtn.classList.remove("connected");
+      connectionHint.style.display = "none";
     } else {
-      statusText.textContent = "Not connected";
+      // disconnected / idle
+      statusText.textContent = message || "Not connected";
+      statusText.className = "status-text";
       connectBtn.textContent = "Connect";
       connectBtn.classList.remove("connected");
+      connectionHint.style.display = "block";
     }
   }
 
   function updateSubtitlePreview(text) {
-    if (!text) {
+    if (!text || text.trim().length === 0) {
       subtitlePreview.textContent = "Waiting for subtitles…";
       subtitlePreview.classList.add("empty");
     } else {
@@ -56,69 +73,90 @@
 
   // ---- WebSocket ----
   function connect() {
-    if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+    if (isConnected || isConnecting) return;
+
+    // Validate room code
+    roomCode = roomInput.value.trim();
+    if (roomCode.length < 1) {
+      roomInput.focus();
+      roomInput.style.borderColor = "#E8735A";
+      setTimeout(() => { roomInput.style.borderColor = "#EDE5D8"; }, 1500);
       return;
     }
 
     intentionalClose = false;
+    isConnecting = true;
     setStatus("connecting");
-    statusText.textContent = "Connecting…";
 
     try {
       ws = new WebSocket(WS_URL);
+
+      // Set a 5-second connection timeout
+      const connectTimeout = setTimeout(() => {
+        if (isConnecting) {
+          setStatus("error", "Connection timed out — is the server running on port 3004?");
+          isConnecting = false;
+          cleanup();
+        }
+      }, 5000);
+
+      ws.onopen = () => {
+        clearTimeout(connectTimeout);
+        isConnected = true;
+        isConnecting = false;
+        setStatus("connected");
+
+        // Join the room
+        ws.send(JSON.stringify({ type: "join-room", code: roomCode }));
+        console.log(`[LinguaScout] Connected & joined room ${roomCode}`);
+
+        // Start polling chrome.storage for subtitles
+        startStoragePolling();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log("[LinguaScout] WS message:", data);
+        } catch {
+          // Non-JSON message, ignore
+        }
+      };
+
+      ws.onclose = (event) => {
+        clearTimeout(connectTimeout);
+        isConnected = false;
+        isConnecting = false;
+        stopStoragePolling();
+
+        if (!intentionalClose) {
+          setStatus("error", `Disconnected (code ${event.code}) — retrying in 5s…`);
+          console.warn(`[LinguaScout] Connection closed (code: ${event.code}). Reconnecting in 5s…`);
+          reconnectTimer = setTimeout(connect, 5000);
+        } else {
+          setStatus("disconnected");
+        }
+      };
+
+      ws.onerror = () => {
+        console.error("[LinguaScout] WebSocket error");
+        // onerror fires before onclose, so let onclose handle the UI
+      };
+
     } catch (err) {
-      setStatus("error");
+      setStatus("error", "Failed to create connection");
+      isConnecting = false;
       console.error("[LinguaScout] WebSocket creation error:", err);
-      return;
     }
-
-    ws.onopen = () => {
-      isConnected = true;
-      setStatus("connected");
-
-      // Join the room
-      ws.send(JSON.stringify({ type: "join-room", code: roomCode }));
-      console.log(`[LinguaScout] Connected & joined room ${roomCode}`);
-
-      // Start polling chrome.storage for subtitles
-      startStoragePolling();
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log("[LinguaScout] WS message:", data);
-        // Handle any server responses if needed in the future
-      } catch {
-        // Non-JSON message, ignore
-      }
-    };
-
-    ws.onclose = (event) => {
-      isConnected = false;
-      stopStoragePolling();
-
-      if (!intentionalClose) {
-        setStatus("error");
-        console.warn(`[LinguaScout] Connection closed (code: ${event.code}). Reconnecting in 3s…`);
-        reconnectTimer = setTimeout(connect, 3000);
-      } else {
-        setStatus("disconnected");
-      }
-    };
-
-    ws.onerror = () => {
-      console.error("[LinguaScout] WebSocket error");
-    };
   }
 
   function disconnect() {
     intentionalClose = true;
+    isConnecting = false;
     clearTimeout(reconnectTimer);
     stopStoragePolling();
 
     if (ws) {
-      // Leave the room before closing
       try {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "leave-room", code: roomCode }));
@@ -133,13 +171,18 @@
     setStatus("disconnected");
   }
 
+  function cleanup() {
+    if (ws) {
+      try { ws.close(); } catch { /* ignore */ }
+      ws = null;
+    }
+  }
+
   // ---- Storage Polling ----
   function startStoragePolling() {
     stopStoragePolling();
-    // Poll every 300ms for new subtitle data
     storagePollTimer = setInterval(pollStorage, 300);
-    // Also poll immediately
-    pollStorage();
+    pollStorage(); // Immediate first poll
   }
 
   function stopStoragePolling() {
@@ -179,14 +222,14 @@
   connectBtn.addEventListener("click", () => {
     if (isConnected) {
       disconnect();
+    } else if (isConnecting) {
+      // Cancel connection attempt
+      intentionalClose = true;
+      isConnecting = false;
+      clearTimeout(reconnectTimer);
+      cleanup();
+      setStatus("disconnected");
     } else {
-      roomCode = roomInput.value.trim();
-      if (roomCode.length < 1) {
-        roomInput.focus();
-        return;
-      }
-      // Save room code for persistence
-      chrome.storage.local.set({ linguaScout_roomCode: roomCode });
       connect();
     }
   });
@@ -205,6 +248,11 @@
     }
   });
 
+  // Save room code whenever it changes
+  roomInput.addEventListener("input", () => {
+    chrome.storage.local.set({ linguaScout_roomCode: roomInput.value });
+  });
+
   // Always show the latest subtitle, even when not connected
   chrome.storage.local.get(
     ["linguaScout_lastSubtitle", "linguaScout_lastTimestamp"],
@@ -214,11 +262,7 @@
   );
 
   // Clean up when popup closes
-  // (The popup is destroyed when closed; WS may continue if background service worker is used)
   window.addEventListener("unload", () => {
-    // Intentionally do NOT disconnect here so the WebSocket stays alive
-    // as long as the popup is open. The browser will close the socket
-    // when the popup is destroyed.
     stopStoragePolling();
     clearTimeout(reconnectTimer);
   });
