@@ -277,12 +277,13 @@
   <div class="content">
     <!-- Server URL (configurable) -->
     <div class="server-section">
-      <label for="serverUrl">🌐 Server URL</label>
+      <label for="serverUrl">🌐 WebSocket Server</label>
       <input
         type="text"
         id="serverUrl"
         class="server-input"
-        placeholder="e.g. http://localhost:3000 or https://your-server.com"
+        placeholder="http://localhost:3004"
+        value="http://localhost:3004"
         autocomplete="off"
       />
     </div>
@@ -296,7 +297,7 @@
           id="roomCode"
           class="room-input"
           maxlength="10"
-          placeholder="0000"
+          placeholder="e.g. 1234"
           autocomplete="off"
         />
         <button id="connectBtn" class="connect-btn">Connect</button>
@@ -311,7 +312,7 @@
 
     <!-- Connection hint (shown when not connected) -->
     <div id="connectionHint" class="connection-hint">
-      <strong>Tip:</strong> Enter the LinguaScout web app's server URL above, then open the Watchtower tab to generate a room code. Enter the room code and click Connect.
+      <strong>Tip:</strong> The Server URL above should point to the WebSocket service (default: <code>http://localhost:3004</code>). Generate a room code in the web app's Watchtower tab, then enter it and click Connect.
     </div>
 
     <!-- Subtitle Preview -->

@@ -234,5 +234,31 @@ Work Log:
 Stage Summary:
 - Chrome Extension now uses socket.io-client matching ws-service protocol
 - Configurable server URL field added for flexible deployment
-- Extension connects via gateway (XTransformPort=3004) to reach ws-service
+- Extension connects directly to ws-service on port 3004 (no proxy/gateway needed)
 - Clean lint, all services running
+
+---
+Task ID: bugfix-extension-v3
+Agent: main-developer
+Task: Fix Chrome Extension "Connection failed — websocket error"
+
+Work Log:
+- Analyzed screenshot: extension popup showed "Connection failed — websocket error" with room code entered but empty Server URL
+- Root causes:
+  1. Empty Server URL field → code fell back to `window.location.origin` which returns `chrome-extension://abcdef...` in a Chrome extension popup — invalid server URL
+  2. Extension used `XTransformPort=3004` which only works through Caddy gateway, but extension runs in user's browser with no Caddy
+  3. Client didn't specify `path: "/"` to match ws-service's Socket.io server config
+- Fixes:
+  - Pre-populated Server URL with `http://localhost:3004` (ws-service directly, no proxy needed)
+  - Added `path: "/"` to extension socket.io client options matching ws-service
+  - Default URL fallback changed from `window.location.origin` to `http://localhost:3004`
+  - Updated hint text to clarify URL should point to ws-service port 3004
+  - Added `path: "/"` to WatchtowerTab.tsx for consistency
+- Verified: Socket.io versions match (server 4.8.3, client 4.8.3)
+- Verified: ws-service handshake works on root path
+- Verified: web app Watchtower still connects with `path: "/"`
+
+Stage Summary:
+- Extension now connects directly to ws-service port 3004 — no gateway proxy required
+- Server URL pre-filled with http://localhost:3004 as default
+- All Socket.io path configs aligned (server and all clients use path: "/")

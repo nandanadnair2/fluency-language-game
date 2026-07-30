@@ -61,6 +61,7 @@ export default function WatchtowerTab() {
       setConnectionError(null);
 
       const socket = io("/?XTransformPort=3004", {
+        path: "/",
         transports: ["websocket", "polling"],
         timeout: 10000,
         reconnection: true,
