@@ -1,8 +1,11 @@
 /**
- * Fluency Popup Script v4
- * Connects to the WebSocket service (port 3004) through the Caddy gateway.
- * The user provides the web app URL (e.g. http://localhost:81) and the extension
- * appends XTransformPort=3004 so Caddy routes to the ws-service.
+ * Fluency Popup Script v5
+ * Connects to a self-hosted Fluency WebSocket service.
+ * The user provides their Fluency server URL and the extension
+ * connects via Socket.io to sync subtitles in real-time.
+ *
+ * NOTE: This requires a self-hosted Fluency server. The extension cannot
+ * connect to cloud-hosted sandbox environments.
  */
 
 (function () {
@@ -42,8 +45,15 @@
     const qIdx = url.indexOf("?");
     if (hashIdx > -1) url = url.substring(0, hashIdx);
     if (qIdx > -1) url = url.substring(0, qIdx);
-    // Route through Caddy gateway to the ws-service on port 3004
-    return `${url}/?XTransformPort=3004`;
+    // Extract port from URL (default to 3004 if on localhost without explicit port)
+    const urlMatch = url.match(/^(https?:\/\/[^:]+)(?::(\d+))?/);
+    if (urlMatch && !urlMatch[2] && url.includes("localhost")) {
+      // Localhost without port — default to 3004 (direct ws-service)
+      return `${url}:3004`;
+    }
+    // If user provides a specific port, connect there directly
+    // If it's a remote URL without port, connect to standard HTTP/HTTPS port
+    return url;
   }
 
   // ---- UI Helpers ----

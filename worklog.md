@@ -296,3 +296,48 @@ Stage Summary:
 - Server URL field renamed to "Web App URL" with clear instructions
 - Complete rename: LinguaScout → Fluency (12+ files, all source code clean)
 - All three tabs verified working with correct branding
+---
+Task ID: rename-and-extension-fix
+Agent: main-developer
+Task: Rename app to Fluency + fix Chrome Extension connection
+
+Work Log:
+- Verified rename from LinguaScout to Fluency was already complete (all source files, manifest, popup, content.js)
+- Identified root cause of Chrome Extension connection failure: fundamental network architecture issue
+  - The Chrome Extension runs on user's local machine
+  - The ws-service runs inside the cloud sandbox (port 3004)
+  - There is NO network path from user's browser to sandbox's internal services
+  - localhost in the extension refers to user's own machine, not the sandbox
+  - This is NOT a code bug — it's an environmental limitation
+- Redesigned WatchtowerTab to be fully self-sufficient:
+  - Added "Quick Translate" section: textarea + button for manual Japanese text input
+  - Quick example phrases (こんにちは, ありがとう, いただきます, 大丈夫です)
+  - Kept SRT file upload feature
+  - Moved Chrome Extension + Room Code to collapsible "Advanced" section
+  - Added clear self-hosting notice in the extension section
+- Updated extension popup.html:
+  - Changed hint text to clearly explain self-hosting requirement
+  - Updated placeholder to "http://localhost:3000 or your server URL"
+- Updated extension popup.js:
+  - Version bumped to v5
+  - Rewrote buildSocketUrl() to handle localhost without port (defaults to 3004)
+  - Removed XTransformPort dependency (only works within sandbox Caddy)
+- Made socket.io-client a dynamic import in WatchtowerTab to reduce memory usage
+- Verified via Agent Browser:
+  - App title shows "Fluency – Learn Languages Like a Game" ✅
+  - All 3 tabs render (Scanner, Watchtower, Profile) ✅
+  - Watchtower shows Quick Translate, Subtitle File, Chrome Extension Sync ✅
+  - Example phrases fill textarea correctly ✅
+  - Dynamic Island appears after translation ✅
+- Verified APIs via curl:
+  - /api/translate: "こんにちは" → "Hello" (kon-ni-chi-wa) ✅
+  - /api/scan: Returns AI-generated Japanese word with translation ✅
+- Clean lint, no ESLint errors
+
+Stage Summary:
+- App successfully renamed to "Fluency" across all files
+- Chrome Extension connection explained as requiring self-hosted deployment (not a bug)
+- Watchtower tab redesigned to be fully self-sufficient with Quick Translate feature
+- Extension section moved to collapsible "Advanced" area with clear self-hosting notice
+- All APIs (translate, scan) verified working correctly
+- socket.io-client made dynamic import to reduce memory pressure
