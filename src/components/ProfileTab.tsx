@@ -11,6 +11,7 @@ import {
   ArrowUp,
   ArrowDown,
   JapaneseFlag,
+  DownloadSimple,
 } from "@phosphor-icons/react";
 import XPSprout from "@/components/XPSprout";
 import StreakCard from "@/components/StreakCard";
@@ -161,6 +162,34 @@ export default function ProfileTab() {
                   Source: Japanese (ja) → English (en)
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Self-hosting download */}
+          <div className="p-4 rounded-2xl bg-coral/8 border border-coral/20 mb-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-base">🖥️</span>
+              <p className="text-sm font-semibold text-charcoal">
+                Self-Host Fluency
+              </p>
+            </div>
+            <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
+              Download the project to run on your own machine. Required for Chrome Extension subtitle sync.
+            </p>
+            <a
+              href="/fluency-project.zip"
+              download="fluency-project.zip"
+              className="w-full py-2.5 rounded-xl bg-coral text-white text-xs font-semibold hover:bg-coral/90 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer no-underline"
+            >
+              <DownloadSimple size={14} weight="bold" />
+              Download Project (ZIP)
+            </a>
+            <div className="mt-2.5 space-y-0.5">
+              <p className="text-[9px] text-muted-foreground font-medium">Setup steps:</p>
+              <p className="text-[9px] text-muted-foreground">1. Extract ZIP → open folder in terminal</p>
+              <p className="text-[9px] text-muted-foreground">2. Run <code className="bg-secondary px-1 rounded text-[9px]">bun install</code></p>
+              <p className="text-[9px] text-muted-foreground">3. Run <code className="bg-secondary px-1 rounded text-[9px]">bun run dev</code></p>
+              <p className="text-[9px] text-muted-foreground">4. Open <code className="bg-secondary px-1 rounded text-[9px]">localhost:3000</code></p>
             </div>
           </div>
 
