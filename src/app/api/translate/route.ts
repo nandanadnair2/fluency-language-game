@@ -1,69 +1,86 @@
 import { NextRequest, NextResponse } from "next/server";
+import ZAI from "z-ai-web-dev-sdk";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+let zaiInstance: Awaited<ReturnType<typeof ZAI.create>> | null = null;
+
+async function getZAI() {
+  if (!zaiInstance) {
+    zaiInstance = await ZAI.create();
+  }
+  return zaiInstance;
+}
+
 interface TranslateRequestBody {
   text: string;
-  sourceLanguage?: string;
   targetLanguage?: string;
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as TranslateRequestBody;
-    const { text, sourceLanguage, targetLanguage } = body;
+    const { text, targetLanguage = "en" } = body;
 
-    if (!text) {
+    if (!text || text.trim().length === 0) {
       return NextResponse.json(
         { error: "Missing text to translate" },
         { status: 400 }
       );
     }
 
-    // Simulate processing
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    const zai = await getZAI();
 
-    // Return mock translation — in production, call z-ai-web-dev-sdk LLM
-    const mockTranslations: Record<string, { original: string; directTranslation: string; romanized: string }> = {
-      "hola": { original: "Hola", directTranslation: "Hello", romanized: "OH-lah" },
-      "gracias": { original: "Gracias", directTranslation: "Thank you", romanized: "GRAH-see-ahs" },
-      "buenos días": { original: "Buenos días", directTranslation: "Good morning", romanized: "BWEH-nohs DEE-ahs" },
-      "¿cómo estás?": { original: "¿Cómo estás?", directTranslation: "How are you?", romanized: "KOH-moh ehs-TAHS" },
-      "bonjour": { original: "Bonjour", directTranslation: "Hello / Good day", romanized: "bohn-ZHOOR" },
-      "merci beaucoup": { original: "Merci beaucoup", directTranslation: "Thank you very much", romanized: "mehr-SEE boh-KOO" },
-      "au revoir": { original: "Au revoir", directTranslation: "Goodbye", romanized: "oh ruh-VWAHR" },
-    };
+    const completion = await zai.chat.completions.create({
+      messages: [
+        {
+          role: "assistant",
+          content: `You are an expert language translator. You will receive a text (likely in Japanese or another language). Translate it to ${targetLanguage} and provide romanization. Respond ONLY with valid JSON, no markdown code blocks. Fields:
+- "original": the exact original text as provided
+- "directTranslation": the ${targetLanguage} translation
+- "romanized": phonetic romanization with hyphens between syllables (e.g. "kon-nee-chee-WAH"). If already in Latin script, repeat the original.
+- "sourceLanguage": detected ISO language code (ja, ko, zh, en, etc.)
+- "targetLanguage": "${targetLanguage}"
 
-    const lowerText = text.toLowerCase().trim();
-    const found = mockTranslations[lowerText];
-
-    const result = found || {
-      original: text,
-      directTranslation: `[Translation of "${text}"]`,
-      romanized: `[${text}]`,
-    };
-
-    return NextResponse.json({
-      ...result,
-      sourceLanguage: sourceLanguage || "auto",
-      targetLanguage: targetLanguage || "en",
-      confidence: found ? 0.95 : 0.7,
+Just raw JSON, no code fences.`,
+        },
+        {
+          role: "user",
+          content: `Translate: "${text}"`,
+        },
+      ],
+      thinking: { type: "disabled" },
     });
+
+    const raw = completion.choices[0]?.message?.content || "";
+    const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+
+    try {
+      const parsed = JSON.parse(cleaned);
+      return NextResponse.json({
+        original: parsed.original || text,
+        directTranslation: parsed.directTranslation || text,
+        romanized: parsed.romanized || text,
+        sourceLanguage: parsed.sourceLanguage || "auto",
+        targetLanguage: parsed.targetLanguage || targetLanguage,
+        confidence: 0.90,
+      });
+    } catch {
+      return NextResponse.json({
+        original: text,
+        directTranslation: text,
+        romanized: text,
+        sourceLanguage: "auto",
+        targetLanguage: targetLanguage,
+        confidence: 0.5,
+      });
+    }
   } catch (error) {
     console.error("Translate error:", error);
     return NextResponse.json(
-      { error: "Failed to translate" },
+      { error: "Translation failed" },
       { status: 500 }
     );
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    status: "ok",
-    endpoint: "/api/translate",
-    description:
-      "POST text to receive translation { original, direct, romanized }",
-  });
 }

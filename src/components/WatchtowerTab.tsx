@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Television,
   Copy,
@@ -16,10 +16,12 @@ import {
   Info,
   WifiHigh,
   WifiSlash,
+  SpinnerGap,
 } from "@phosphor-icons/react";
 import DynamicIsland from "@/components/DynamicIsland";
 import { useGameStore } from "@/lib/game-state";
 import type { TranslationResponse } from "@/lib/translation-utils";
+import { io, Socket } from "socket.io-client";
 
 interface ParsedSubtitle {
   index: number;
@@ -29,68 +31,146 @@ interface ParsedSubtitle {
 export default function WatchtowerTab() {
   const [roomCode, setRoomCode] = useState<string>("");
   const [isRoomActive, setIsRoomActive] = useState(false);
-  const [serverConnected, setServerConnected] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [socketConnecting, setSocketConnecting] = useState(false);
   const [subtitle, setSubtitle] = useState<TranslationResponse | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [subtitles, setSubtitles] = useState<ParsedSubtitle[]>([]);
   const [currentSubIndex, setCurrentSubIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
   const [showExtensionGuide, setShowExtensionGuide] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const addXP = useGameStore((s) => s.addXP);
   const scanWord = useGameStore((s) => s.scanWord);
 
-  // Poll for subtitles from the server when room is active
-  useEffect(() => {
-    if (!isRoomActive || !roomCode || roomCode === "SRT-LOADED") return;
+  // ─── Socket.io Connection Management ───
+  const connectSocket = useCallback(
+    (code: string) => {
+      // Clean up existing connection
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
 
-    let mounted = true;
+      setSocketConnecting(true);
+      setConnectionError(null);
 
-    // Check connection
-    fetch("/api/watchtower", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "check", code: roomCode }) })
-      .then(r => r.json())
-      .then(data => { if (mounted) setServerConnected(true); })
-      .catch(() => { if (mounted) setServerConnected(true); }); // Show connected even if check fails
+      const socket = io("/?XTransformPort=3004", {
+        transports: ["websocket", "polling"],
+        timeout: 10000,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 2000,
+      });
 
-    // Poll every 2 seconds for new subtitles
-    const poll = () => {
-      if (!mounted || !roomCode) return;
-      fetch(`/api/watchtower?code=${roomCode}`)
-        .then(r => r.json())
-        .then(data => {
-          if (!mounted) return;
-          if (data.subtitle && data.subtitle.text) {
-            setSubtitle({
-              original: data.subtitle.text,
-              directTranslation: data.subtitle.translation?.directTranslation || data.subtitle.text,
-              romanized: data.subtitle.translation?.romanized || data.subtitle.text,
-              sourceLanguage: data.subtitle.translation?.sourceLanguage || "ja",
-              targetLanguage: data.subtitle.translation?.targetLanguage || "en",
-              confidence: 0.85,
+      socketRef.current = socket;
+
+      socket.on("connect", () => {
+        console.log("[Watchtower] Socket connected:", socket.id);
+        setSocketConnected(true);
+        setSocketConnecting(false);
+        setConnectionError(null);
+
+        // Join the room
+        socket.emit("join-room", code, (response: any) => {
+          console.log("[Watchtower] Joined room:", code, response);
+        });
+      });
+
+      socket.on("disconnect", (reason) => {
+        console.log("[Watchtower] Socket disconnected:", reason);
+        setSocketConnected(false);
+        setSocketConnecting(false);
+        if (reason === "io server disconnect") {
+          setConnectionError("Server disconnected. Try generating a new room code.");
+        }
+      });
+
+      socket.on("connect_error", (err) => {
+        console.error("[Watchtower] Connection error:", err.message);
+        setSocketConnected(false);
+        setSocketConnecting(false);
+        setConnectionError("Connection failed. Make sure the WebSocket service is running.");
+      });
+
+      // Receive subtitles from extension
+      socket.on("subtitle", async (data: { code: string; text: string; translation: any }) => {
+        console.log("[Watchtower] Received subtitle:", data.text?.slice(0, 50));
+
+        // If the ws-service already provided a translation, use it
+        if (data.translation && data.translation.directTranslation) {
+          setSubtitle({
+            original: data.text,
+            directTranslation: data.translation.directTranslation,
+            romanized: data.translation.romanized || data.translation.directTranslation,
+            sourceLanguage: data.translation.sourceLanguage || "ja",
+            targetLanguage: data.translation.targetLanguage || "en",
+            confidence: 0.90,
+          });
+        } else {
+          // Otherwise, call our LLM translation API
+          setIsTranslating(true);
+          try {
+            const res = await fetch("/api/translate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: data.text }),
             });
-            setIsExpanded(true);
+            const translated = await res.json();
+            setSubtitle({
+              original: data.text,
+              directTranslation: translated.directTranslation || data.text,
+              romanized: translated.romanized || data.text,
+              sourceLanguage: translated.sourceLanguage || "ja",
+              targetLanguage: translated.targetLanguage || "en",
+              confidence: 0.90,
+            });
+          } catch {
+            setSubtitle({
+              original: data.text,
+              directTranslation: data.text,
+              romanized: data.text,
+              sourceLanguage: "auto",
+              targetLanguage: "en",
+              confidence: 0.5,
+            });
+          } finally {
+            setIsTranslating(false);
           }
-        })
-        .catch(() => {}); // Silent fail
-    };
+        }
+        setIsExpanded(true);
+      });
 
-    poll();
-    pollRef.current = setInterval(poll, 2000);
+      // Member updates
+      socket.on("member-joined", (data: any) => {
+        console.log("[Watchtower] Member joined:", data);
+      });
 
+      socket.on("member-left", (data: any) => {
+        console.log("[Watchtower] Member left:", data);
+      });
+    },
+    []
+  );
+
+  // Cleanup socket on unmount
+  useEffect(() => {
     return () => {
-      mounted = false;
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
     };
-  }, [isRoomActive, roomCode]);
+  }, []);
 
   const generateRoomCode = useCallback(async () => {
     try {
+      // Try to create room via HTTP API first
       const res = await fetch("/api/watchtower", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,22 +180,34 @@ export default function WatchtowerTab() {
       if (data.code) {
         setRoomCode(data.code);
         setIsRoomActive(true);
+        // Connect Socket.io for real-time subtitle sync
+        connectSocket(data.code);
+        return;
       }
-    } catch (err) {
-      // Fallback to local code generation
-      const code = String(Math.floor(1000 + Math.random() * 9000));
-      setRoomCode(code);
-      setIsRoomActive(true);
+    } catch {
+      // Fallback: generate local code
     }
-  }, []);
+
+    // Fallback to local code generation
+    const code = String(Math.floor(1000 + Math.random() * 9000));
+    setRoomCode(code);
+    setIsRoomActive(true);
+    connectSocket(code);
+  }, [connectSocket]);
 
   const disconnectRoom = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
     setIsRoomActive(false);
-    setServerConnected(false);
+    setSocketConnected(false);
+    setSocketConnecting(false);
+    setConnectionError(null);
     setSubtitles([]);
     setCurrentSubIndex(0);
     setIsPlaying(false);
@@ -177,20 +269,41 @@ export default function WatchtowerTab() {
     };
   }, [isPlaying, subtitles]);
 
-  // Update subtitle when currentSubIndex changes
+  // Translate current SRT subtitle when index changes
   useEffect(() => {
-    if (subtitles.length > 0 && currentSubIndex < subtitles.length) {
+    if (subtitles.length > 0 && currentSubIndex < subtitles.length && roomCode === "SRT-LOADED") {
       const sub = subtitles[currentSubIndex];
-      setSubtitle({
-        original: sub.text,
-        directTranslation: `[${sub.text}]`,
-        romanized: `[${sub.text}]`,
-        sourceLanguage: "auto",
-        targetLanguage: "en",
-        confidence: 0.85,
-      });
+      setIsTranslating(true);
+
+      fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: sub.text }),
+      })
+        .then((r) => r.json())
+        .then((translated) => {
+          setSubtitle({
+            original: sub.text,
+            directTranslation: translated.directTranslation || `[${sub.text}]`,
+            romanized: translated.romanized || `[${sub.text}]`,
+            sourceLanguage: translated.sourceLanguage || "auto",
+            targetLanguage: translated.targetLanguage || "en",
+            confidence: 0.90,
+          });
+        })
+        .catch(() => {
+          setSubtitle({
+            original: sub.text,
+            directTranslation: `[${sub.text}]`,
+            romanized: `[${sub.text}]`,
+            sourceLanguage: "auto",
+            targetLanguage: "en",
+            confidence: 0.5,
+          });
+        })
+        .finally(() => setIsTranslating(false));
     }
-  }, [currentSubIndex, subtitles]);
+  }, [currentSubIndex, subtitles, roomCode]);
 
   const handleSave = useCallback(
     (word: TranslationResponse) => {
@@ -336,10 +449,15 @@ export default function WatchtowerTab() {
           <div className="space-y-3">
             <button
               onClick={generateRoomCode}
-              className="w-full py-3.5 rounded-2xl bg-coral text-white font-medium shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+              disabled={socketConnecting}
+              className="w-full py-3.5 rounded-2xl bg-coral text-white font-medium shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Link size={18} weight="bold" />
-              Generate Room Code
+              {socketConnecting ? (
+                <SpinnerGap size={18} className="animate-spin" />
+              ) : (
+                <Link size={18} weight="bold" />
+              )}
+              {socketConnecting ? "Connecting..." : "Generate Room Code"}
             </button>
             <div className="text-center">
               <span className="text-xs text-muted-foreground">— or —</span>
@@ -362,35 +480,100 @@ export default function WatchtowerTab() {
             </label>
           </div>
         ) : (
-          <div className="space-y-3">
-            <div className="flex items-center justify-center gap-3 p-4 rounded-2xl bg-sage/10 border border-sage/20">
-              <div className="w-2 h-2 rounded-full bg-sage animate-pulse" />
+          <div className="space-y-4">
+            <div className="flex items-center justify-center gap-3 p-5 rounded-2xl bg-sage/10 border border-sage/20">
+              <div className={`w-3 h-3 rounded-full animate-pulse ${socketConnected ? "bg-sage" : "bg-yellow-500"}`} />
               <span className="text-sm text-muted-foreground">
                 Room Code:
               </span>
-              <span className="text-2xl font-bold font-serif text-charcoal tracking-widest">
+              <span className="text-3xl font-bold font-serif text-charcoal tracking-widest">
                 {roomCode}
               </span>
               <button
                 onClick={() => navigator.clipboard.writeText(roomCode)}
-                className="w-8 h-8 rounded-full bg-sage/20 flex items-center justify-center hover:bg-sage/30 transition-all active:scale-90"
+                className="w-9 h-9 rounded-full bg-sage/20 flex items-center justify-center hover:bg-sage/30 transition-all active:scale-90"
               >
-                <Copy size={14} weight="bold" className="text-sage" />
+                <Copy size={16} weight="bold" className="text-sage" />
               </button>
             </div>
 
-            {/* Connection status */}
-            <div className="flex items-center justify-center gap-2 text-xs">
-              <WifiHigh size={14} weight="fill" className="text-sage" />
-              <span className="text-sage font-medium">
-                Room active — waiting for subtitles from extension
-              </span>
-            </div>
+            {/* Connection status — prominently displayed */}
+            <AnimatePresence mode="wait">
+              {socketConnecting && (
+                <motion.div
+                  key="connecting"
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-yellow-50 border border-yellow-200"
+                >
+                  <SpinnerGap size={18} weight="bold" className="text-yellow-600 animate-spin" />
+                  <span className="text-sm font-medium text-yellow-700">
+                    Connecting to WebSocket...
+                  </span>
+                </motion.div>
+              )}
+
+              {socketConnected && !socketConnecting && (
+                <motion.div
+                  key="connected"
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-sage/10 border border-sage/30"
+                >
+                  <WifiHigh size={18} weight="fill" className="text-sage" />
+                  <span className="text-sm font-medium text-sage">
+                    Connected — Waiting for subtitles from extension
+                  </span>
+                </motion.div>
+              )}
+
+              {!socketConnected && !socketConnecting && connectionError && (
+                <motion.div
+                  key="error"
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-red-50 border border-red-200"
+                >
+                  <WifiSlash size={18} weight="fill" className="text-red-500" />
+                  <span className="text-sm font-medium text-red-600">
+                    {connectionError}
+                  </span>
+                </motion.div>
+              )}
+
+              {!socketConnected && !socketConnecting && !connectionError && roomCode === "SRT-LOADED" && (
+                <motion.div
+                  key="srt"
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-sage/10 border border-sage/30"
+                >
+                  <WifiHigh size={18} weight="fill" className="text-sage" />
+                  <span className="text-sm font-medium text-sage">
+                    SRT file loaded — use the Subtitle Player below
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Translating indicator */}
+            {isTranslating && (
+              <div className="flex items-center justify-center gap-2 py-2 rounded-xl bg-coral/5">
+                <SpinnerGap size={14} className="text-coral animate-spin" />
+                <span className="text-xs font-medium text-coral">
+                  Translating with AI...
+                </span>
+              </div>
+            )}
 
             {/* Extension hint */}
-            <div className="p-3 rounded-2xl bg-coral/5 border border-coral/10">
-              <p className="text-xs text-muted-foreground flex items-start gap-2">
-                <Info size={14} weight="fill" className="text-coral shrink-0 mt-0.5" />
+            <div className="p-4 rounded-2xl bg-coral/5 border border-coral/10">
+              <p className="text-sm text-muted-foreground flex items-start gap-2">
+                <Info size={16} weight="fill" className="text-coral shrink-0 mt-0.5" />
                 <span>
                   Enter this code in the <span className="font-medium text-coral">LinguaScout extension popup</span> on Netflix or YouTube. Make sure Japanese subtitles are turned on.
                 </span>
@@ -399,7 +582,7 @@ export default function WatchtowerTab() {
 
             <button
               onClick={disconnectRoom}
-              className="w-full py-2 rounded-xl bg-secondary text-sm font-medium text-muted-foreground hover:bg-secondary/80 transition-all active:scale-[0.98]"
+              className="w-full py-3 rounded-2xl bg-secondary text-sm font-medium text-muted-foreground hover:bg-secondary/80 transition-all active:scale-[0.98]"
             >
               Disconnect Room
             </button>
@@ -414,16 +597,16 @@ export default function WatchtowerTab() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold text-charcoal font-serif">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-bold text-charcoal font-serif">
               Subtitle Player
             </h3>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-sm text-muted-foreground">
               {currentSubIndex + 1} / {subtitles.length}
             </span>
           </div>
 
-          <div className="h-1.5 rounded-full bg-secondary mb-3 overflow-hidden">
+          <div className="h-2 rounded-full bg-secondary mb-4 overflow-hidden">
             <motion.div
               className="h-full rounded-full bg-coral"
               animate={{
@@ -432,34 +615,34 @@ export default function WatchtowerTab() {
             />
           </div>
 
-          <div className="flex items-center justify-center gap-3 mb-3">
+          <div className="flex items-center justify-center gap-4 mb-4">
             <button
               onClick={() => setCurrentSubIndex((prev) => Math.max(0, prev - 1))}
-              className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all active:scale-90"
+              className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all active:scale-90"
             >
-              <SkipForward size={18} weight="bold" className="text-charcoal rotate-180" />
+              <SkipForward size={20} weight="bold" className="text-charcoal rotate-180" />
             </button>
             <button
               onClick={() => setIsPlaying(!isPlaying)}
-              className="w-12 h-12 rounded-full bg-coral text-white flex items-center justify-center shadow-lg hover:shadow-xl transition-all active:scale-90"
+              className="w-14 h-14 rounded-full bg-coral text-white flex items-center justify-center shadow-lg hover:shadow-xl transition-all active:scale-90"
             >
               {isPlaying ? (
-                <Pause size={20} weight="fill" />
+                <Pause size={24} weight="fill" />
               ) : (
-                <Play size={20} weight="fill" />
+                <Play size={24} weight="fill" />
               )}
             </button>
             <button
               onClick={() => setCurrentSubIndex((prev) => Math.min(subtitles.length - 1, prev + 1))}
-              className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all active:scale-90"
+              className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all active:scale-90"
             >
-              <SkipForward size={18} weight="bold" className="text-charcoal" />
+              <SkipForward size={20} weight="bold" className="text-charcoal" />
             </button>
           </div>
 
           {subtitles[currentSubIndex] && (
-            <div className="p-3 rounded-2xl bg-secondary/50 text-center">
-              <p className="text-sm text-charcoal">
+            <div className="p-4 rounded-2xl bg-secondary/50 text-center">
+              <p className="text-base text-charcoal leading-relaxed">
                 {subtitles[currentSubIndex].text}
               </p>
             </div>
