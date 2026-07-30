@@ -1,13 +1,14 @@
 /**
- * LinguaScout Popup Script
- * Manages WebSocket connection to the LinguaScout backend and
- * forwards subtitle text detected by the content script.
+ * LinguaScout Popup Script v2
+ * Uses socket.io-client to connect to the LinguaScout ws-service.
+ * Forwards subtitle text detected by the content script in real-time.
  */
 
 (function () {
   "use strict";
 
   // ---- DOM Elements ----
+  const serverUrlInput = document.getElementById("serverUrl");
   const roomInput       = document.getElementById("roomCode");
   const connectBtn      = document.getElementById("connectBtn");
   const statusDot       = document.getElementById("statusDot");
@@ -16,8 +17,7 @@
   const connectionHint  = document.getElementById("connectionHint");
 
   // ---- State ----
-  const WS_URL = "ws://localhost:3004/";
-  let ws = null;
+  let socket = null;
   let roomCode = "";
   let isConnected = false;
   let isConnecting = false;
@@ -25,6 +25,37 @@
   let storagePollTimer = null;
   let reconnectTimer = null;
   let intentionalClose = false;
+
+  // ---- Server URL Helpers ----
+  // The ws-service runs on port 3004 behind the gateway.
+  // When connecting to a Next.js server on port X, we append XTransformPort=3004.
+  function buildSocketUrl(serverBase) {
+    let url = serverBase.trim().replace(/\/+$/, "");
+    // Remove any existing query params
+    const hashIdx = url.indexOf("#");
+    const qIdx = url.indexOf("?");
+    if (hashIdx > -1) url = url.substring(0, hashIdx);
+    if (qIdx > -1) url = url.substring(0, qIdx);
+
+    // Determine the base port from the URL
+    try {
+      const parsed = new URL(url);
+      const basePort = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+
+      // If the user is connecting to the Next.js server (typically port 3000),
+      // route to the ws-service via XTransformPort=3004
+      return `${url}/?XTransformPort=3004`;
+    } catch {
+      return `${url}/?XTransformPort=3004`;
+    }
+  }
+
+  function getServerUrl() {
+    const val = serverUrlInput.value.trim();
+    if (val && val.length > 3) return val;
+    // Default: assume same server as the web app
+    return window.location ? window.location.origin : "http://localhost:3000";
+  }
 
   // ---- UI Helpers ----
   function setStatus(state, message) {
@@ -52,7 +83,6 @@
       connectBtn.classList.remove("connected");
       connectionHint.style.display = "none";
     } else {
-      // disconnected / idle
       statusText.textContent = message || "Not connected";
       statusText.className = "status-text";
       connectBtn.textContent = "Connect";
@@ -71,7 +101,7 @@
     }
   }
 
-  // ---- WebSocket ----
+  // ---- Socket.io Connection ----
   function connect() {
     if (isConnected || isConnecting) return;
 
@@ -86,67 +116,89 @@
 
     intentionalClose = false;
     isConnecting = true;
-    setStatus("connecting");
+    setStatus("connecting", "Connecting to server…");
+
+    const serverUrl = getServerUrl();
+    const socketUrl = buildSocketUrl(serverUrl);
+
+    console.log(`[LinguaScout] Connecting to: ${socketUrl}`);
+    console.log(`[LinguaScout] Room code: ${roomCode}`);
 
     try {
-      ws = new WebSocket(WS_URL);
+      socket = io(socketUrl, {
+        transports: ["websocket", "polling"],
+        timeout: 8000,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 3000,
+        forceNew: true,
+      });
 
-      // Set a 5-second connection timeout
+      // Connection timeout fallback
       const connectTimeout = setTimeout(() => {
-        if (isConnecting) {
-          setStatus("error", "Connection timed out — is the server running on port 3004?");
+        if (isConnecting && !isConnected) {
+          setStatus("error", "Connection timed out — check server URL");
           isConnecting = false;
           cleanup();
         }
-      }, 5000);
+      }, 10000);
 
-      ws.onopen = () => {
+      socket.on("connect", () => {
         clearTimeout(connectTimeout);
         isConnected = true;
         isConnecting = false;
+        console.log(`[LinguaScout] Socket connected: ${socket.id}`);
         setStatus("connected");
 
-        // Join the room
-        ws.send(JSON.stringify({ type: "join-room", code: roomCode }));
-        console.log(`[LinguaScout] Connected & joined room ${roomCode}`);
+        // Join the room via Socket.io event
+        socket.emit("join-room", roomCode, (response) => {
+          console.log(`[LinguaScout] Joined room ${roomCode}:`, response);
+        });
 
         // Start polling chrome.storage for subtitles
         startStoragePolling();
-      };
+      });
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log("[LinguaScout] WS message:", data);
-        } catch {
-          // Non-JSON message, ignore
-        }
-      };
-
-      ws.onclose = (event) => {
+      socket.on("disconnect", (reason) => {
         clearTimeout(connectTimeout);
         isConnected = false;
         isConnecting = false;
         stopStoragePolling();
+        console.warn(`[LinguaScout] Disconnected: ${reason}`);
 
         if (!intentionalClose) {
-          setStatus("error", `Disconnected (code ${event.code}) — retrying in 5s…`);
-          console.warn(`[LinguaScout] Connection closed (code: ${event.code}). Reconnecting in 5s…`);
-          reconnectTimer = setTimeout(connect, 5000);
+          setStatus("error", `Disconnected — retrying…`);
+          // socket.io-client handles reconnection automatically
         } else {
           setStatus("disconnected");
         }
-      };
+      });
 
-      ws.onerror = () => {
-        console.error("[LinguaScout] WebSocket error");
-        // onerror fires before onclose, so let onclose handle the UI
-      };
+      socket.on("connect_error", (err) => {
+        clearTimeout(connectTimeout);
+        isConnecting = false;
+        console.error(`[LinguaScout] Connection error: ${err.message}`);
+        setStatus("error", `Connection failed — ${err.message}`);
+        cleanup();
+      });
+
+      socket.on("subtitle", (data) => {
+        // Server echoing subtitle back — ignore (we sent it)
+        console.log("[LinguaScout] Subtitle echoed back:", data.text?.slice(0, 40));
+      });
+
+      socket.on("member-joined", (data) => {
+        console.log("[LinguaScout] Member joined:", data);
+      });
+
+      socket.on("member-left", (data) => {
+        console.log("[LinguaScout] Member left:", data);
+      });
 
     } catch (err) {
       setStatus("error", "Failed to create connection");
       isConnecting = false;
-      console.error("[LinguaScout] WebSocket creation error:", err);
+      console.error("[LinguaScout] Socket creation error:", err);
     }
   }
 
@@ -156,14 +208,15 @@
     clearTimeout(reconnectTimer);
     stopStoragePolling();
 
-    if (ws) {
+    if (socket) {
       try {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "leave-room", code: roomCode }));
+        // Leave the room before disconnecting
+        if (isConnected && roomCode) {
+          socket.emit("leave-room", roomCode);
         }
+        socket.disconnect();
       } catch { /* ignore */ }
-      ws.close();
-      ws = null;
+      socket = null;
     }
 
     isConnected = false;
@@ -172,9 +225,9 @@
   }
 
   function cleanup() {
-    if (ws) {
-      try { ws.close(); } catch { /* ignore */ }
-      ws = null;
+    if (socket) {
+      try { socket.disconnect(); } catch { /* ignore */ }
+      socket = null;
     }
   }
 
@@ -182,7 +235,7 @@
   function startStoragePolling() {
     stopStoragePolling();
     storagePollTimer = setInterval(pollStorage, 300);
-    pollStorage(); // Immediate first poll
+    pollStorage();
   }
 
   function stopStoragePolling() {
@@ -199,17 +252,15 @@
         const text = result.linguaScout_lastSubtitle || "";
         updateSubtitlePreview(text);
 
-        // Send to WebSocket if it's new text and we're connected
+        // Send to Socket.io if it's new text and we're connected
         if (isConnected && text && text !== lastSentText) {
           lastSentText = text;
           try {
-            ws.send(
-              JSON.stringify({
-                type: "subtitle",
-                code: roomCode,
-                text: text,
-              })
-            );
+            socket.emit("subtitle", {
+              code: roomCode,
+              text: text,
+            });
+            console.log(`[LinguaScout] Sent subtitle: "${text.slice(0, 50)}"`);
           } catch (err) {
             console.error("[LinguaScout] Failed to send subtitle:", err);
           }
@@ -223,10 +274,8 @@
     if (isConnected) {
       disconnect();
     } else if (isConnecting) {
-      // Cancel connection attempt
       intentionalClose = true;
       isConnecting = false;
-      clearTimeout(reconnectTimer);
       cleanup();
       setStatus("disconnected");
     } else {
@@ -236,21 +285,30 @@
 
   // Allow Enter key to connect
   roomInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      connectBtn.click();
-    }
+    if (e.key === "Enter") connectBtn.click();
   });
 
-  // Restore saved room code on popup open
-  chrome.storage.local.get("linguaScout_roomCode", (result) => {
-    if (result.linguaScout_roomCode) {
-      roomInput.value = result.linguaScout_roomCode;
+  // Restore saved values on popup open
+  chrome.storage.local.get(
+    ["linguaScout_roomCode", "linguaScout_serverUrl"],
+    (result) => {
+      if (result.linguaScout_roomCode) {
+        roomInput.value = result.linguaScout_roomCode;
+      }
+      if (result.linguaScout_serverUrl) {
+        serverUrlInput.value = result.linguaScout_serverUrl;
+      }
     }
-  });
+  );
 
   // Save room code whenever it changes
   roomInput.addEventListener("input", () => {
     chrome.storage.local.set({ linguaScout_roomCode: roomInput.value });
+  });
+
+  // Save server URL whenever it changes
+  serverUrlInput.addEventListener("input", () => {
+    chrome.storage.local.set({ linguaScout_serverUrl: serverUrlInput.value });
   });
 
   // Always show the latest subtitle, even when not connected
@@ -265,5 +323,6 @@
   window.addEventListener("unload", () => {
     stopStoragePolling();
     clearTimeout(reconnectTimer);
+    // Keep socket alive when popup closes — it will reconnect when reopened
   });
 })();

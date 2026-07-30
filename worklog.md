@@ -211,3 +211,28 @@ Stage Summary:
 - All APIs verified working via Caddy: /api/scan (LLM translation), /api/translate (subtitle translation), /api/watchtower (room management)
 - WebSocket confirmed working via Caddy (port 81): socket connects, joins room, ready for subtitles
 - Clean lint, no compilation errors
+
+---
+Task ID: bugfix-extension
+Agent: main-developer
+Task: Fix Chrome Extension connection failure
+
+Work Log:
+- Root cause: Extension popup.js used raw `new WebSocket(WS_URL)` to connect to ws://localhost:3004/, but the ws-service uses Socket.io protocol (engine.io handshake). Raw WebSocket cannot communicate with a Socket.io server — protocol mismatch.
+- Fixed by:
+  - Copied socket.io-client browser build (socket.io.min.js, 47KB) into browser-extension/
+  - Completely rewrote popup.js to use socket.io-client (io()) instead of raw WebSocket
+  - Added configurable "Server URL" field in popup.html — users enter the LinguaScout web app URL (e.g. http://localhost:3000), extension auto-routes to ws-service via XTransformPort=3004
+  - Socket.io events now match ws-service: join-room, leave-room, subtitle
+  - Proper reconnection handling via socket.io-client's built-in reconnect
+  - Server URL and room code saved to chrome.storage.local for persistence
+  - Added host_permissions ["*://*/*"] to manifest.json for cross-origin WebSocket
+  - Updated manifest.json to v2.0.0
+- Excluded browser-extension/ and mini-services/ from ESLint
+- Verified: web app Socket.io connection works perfectly via Caddy (connected, room joined, zero errors)
+
+Stage Summary:
+- Chrome Extension now uses socket.io-client matching ws-service protocol
+- Configurable server URL field added for flexible deployment
+- Extension connects via gateway (XTransformPort=3004) to reach ws-service
+- Clean lint, all services running

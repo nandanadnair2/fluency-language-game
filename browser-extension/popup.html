@@ -22,7 +22,7 @@
 
     body {
       width: 400px;
-      min-height: 480px;
+      min-height: 520px;
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       background: var(--cream);
       color: var(--charcoal);
@@ -57,6 +57,41 @@
       display: flex;
       flex-direction: column;
       gap: 14px;
+    }
+
+    /* Server URL Section */
+    .server-section {
+      background: var(--card-bg);
+      border-radius: 14px;
+      padding: 14px 18px;
+      box-shadow: 0 2px 10px var(--shadow);
+      border: 1px solid rgba(61, 56, 50, 0.06);
+    }
+    .server-section label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--warm-gray);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .server-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 2px solid #EDE5D8;
+      border-radius: 10px;
+      font-size: 13px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      color: var(--charcoal);
+      background: #fff;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .server-input:focus { border-color: var(--coral); }
+    .server-input::placeholder {
+      color: #C9C0B3;
+      font-size: 12px;
     }
 
     /* Room Code Section */
@@ -124,6 +159,10 @@
     .connect-btn.connected:hover {
       background: var(--coral-dark);
     }
+    .connect-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
 
     /* Status */
     .status-bar {
@@ -188,7 +227,7 @@
       box-shadow: 0 2px 10px var(--shadow);
       border: 1px solid rgba(61, 56, 50, 0.06);
       flex: 1;
-      min-height: 120px;
+      min-height: 100px;
       display: flex;
       flex-direction: column;
     }
@@ -209,7 +248,7 @@
       display: flex;
       align-items: center;
       overflow-y: auto;
-      max-height: 200px;
+      max-height: 180px;
       word-break: break-word;
     }
     .subtitle-preview.empty {
@@ -236,6 +275,18 @@
   </div>
 
   <div class="content">
+    <!-- Server URL (configurable) -->
+    <div class="server-section">
+      <label for="serverUrl">🌐 Server URL</label>
+      <input
+        type="text"
+        id="serverUrl"
+        class="server-input"
+        placeholder="e.g. http://localhost:3000 or https://your-server.com"
+        autocomplete="off"
+      />
+    </div>
+
     <!-- Room Code -->
     <div class="room-section">
       <label for="roomCode">Room Code</label>
@@ -244,7 +295,7 @@
           type="text"
           id="roomCode"
           class="room-input"
-          maxlength="4"
+          maxlength="10"
           placeholder="0000"
           autocomplete="off"
         />
@@ -260,7 +311,7 @@
 
     <!-- Connection hint (shown when not connected) -->
     <div id="connectionHint" class="connection-hint">
-      <strong>Tip:</strong> Make sure the LinguaScout WebSocket server is running on port 3004. Open the web app's Watchtower tab to generate a room code, then enter it here.
+      <strong>Tip:</strong> Enter the LinguaScout web app's server URL above, then open the Watchtower tab to generate a room code. Enter the room code and click Connect.
     </div>
 
     <!-- Subtitle Preview -->
@@ -276,6 +327,7 @@
     Open YouTube or Netflix → enable Japanese captions → connect to start syncing.
   </div>
 
+  <script src="socket.io.min.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
