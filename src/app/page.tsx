@@ -6,6 +6,7 @@ import {
   Scan,
   Television,
   User,
+  DownloadSimple,
 } from "@phosphor-icons/react";
 import ScannerTab from "@/components/ScannerTab";
 import WatchtowerTab from "@/components/WatchtowerTab";
@@ -133,10 +134,18 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="bg-cream/90 backdrop-blur-sm border-t border-border/20 mt-auto">
-        <div className="max-w-lg mx-auto px-4 py-3 text-center">
+        <div className="max-w-lg mx-auto px-4 py-2.5 flex items-center justify-between">
           <p className="text-[10px] text-muted-foreground">
             Fluency MVP • Built with Next.js, Framer Motion & 🧡
           </p>
+          <a
+            href="/api/download-zip"
+            download="fluency-project.zip"
+            className="flex items-center gap-1 text-[10px] font-medium text-coral hover:text-coral/80 transition-colors no-underline cursor-pointer"
+          >
+            <DownloadSimple size={12} weight="bold" />
+            Download for Self-Hosting
+          </a>
         </div>
       </footer>
     </div>
