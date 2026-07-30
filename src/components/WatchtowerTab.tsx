@@ -595,13 +595,36 @@ export default function WatchtowerTab() {
                   </div>
                 </div>
 
-                {/* Self-hosting note */}
-                <div className="p-3 rounded-xl bg-butter/10 border border-butter/20">
-                  <p className="text-[11px] text-muted-foreground flex items-start gap-2">
+                {/* Self-hosting guide */}
+                <div className="p-4 rounded-xl bg-butter/10 border border-butter/20 space-y-3">
+                  <div className="flex items-start gap-2">
                     <Info size={14} weight="fill" className="text-butter shrink-0 mt-0.5" />
-                    <span>
-                      <span className="font-medium text-butter">Self-hosted setup required.</span> The Chrome Extension syncs subtitles in real-time when you run Fluency on your own server. In this demo, use Quick Translate or SRT upload above.
+                    <span className="text-[11px] text-muted-foreground">
+                      <span className="font-medium text-butter">Self-hosting required for extension sync.</span> Here&apos;s how to set up Fluency on your own machine:
                     </span>
+                  </div>
+                  <div className="space-y-2 pl-6">
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className="font-medium text-charcoal">1.</span> Clone or download the Fluency project to your computer
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className="font-medium text-charcoal">2.</span> Run <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">bun install</code> to install dependencies
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className="font-medium text-charcoal">3.</span> Start the web app: <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">bun run dev</code>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className="font-medium text-charcoal">4.</span> Start the WebSocket service: <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">cd mini-services/ws-service &amp;&amp; bun run dev</code>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className="font-medium text-charcoal">5.</span> Open the Fluency web app at <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">http://localhost:3000</code>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className="font-medium text-charcoal">6.</span> In the extension popup, enter <code className="px-1 py-0.5 rounded bg-secondary text-[10px] font-mono">http://localhost:3000</code> as the Web App URL
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground italic">
+                    💡 In this demo environment, use Quick Translate or SRT upload above instead.
                   </p>
                 </div>
 

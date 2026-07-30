@@ -341,3 +341,27 @@ Stage Summary:
 - Extension section moved to collapsible "Advanced" area with clear self-hosting notice
 - All APIs (translate, scan) verified working correctly
 - socket.io-client made dynamic import to reduce memory pressure
+
+---
+Task ID: bugfix-dynamic-island-selfhost
+Agent: main-developer
+Task: Fix DynamicIsland (translation display + close button) + add self-hosting guide
+
+Work Log:
+- Fixed DynamicIsland close button: replaced tiny X icon-only button with visible "Close" button (X + text label, bg highlight, larger touch target, stopPropagation to prevent event bubbling)
+- Fixed translation display: reorganized card sections — "Original Text" → "English Translation" (prominent, coral-tinted border) → "Pronunciation" (green italic). English translation now clearly labeled and visually distinct.
+- Made DynamicIsland content scrollable (max-h-[60vh] overflow-y-auto) so all sections are visible even on small screens
+- Adjusted DynamicIsland positioning: bottom-24 (up from bottom-20) to clear bottom nav, z-[100] (up from z-50) to ensure it's always on top
+- Removed collapse-to-pill button (ArrowDown) — simplified: header only has Close button, user can dismiss entirely
+- Added detailed self-hosting guide (6 steps) to Watchtower extension section: clone project, bun install, start web app, start ws-service, open localhost:3000, enter URL in extension popup
+- Verified via Agent Browser:
+  - Quick Translate: こんにちは → "Hello" (kon-ni-chi-wa) with all 3 sections visible ✅
+  - Close button: Clicked → DynamicIsland dismissed correctly ✅
+  - Scanner tab: Open Camera, Upload Image, Demo Scan all visible ✅
+  - Profile tab: Accessible ✅
+
+Stage Summary:
+- DynamicIsland now shows English Translation prominently with clear labels
+- Close button is visible, labeled, and functional
+- Content is scrollable so nothing is cut off
+- Self-hosting guide added with 6 clear steps
