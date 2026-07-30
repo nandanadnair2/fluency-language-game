@@ -162,14 +162,20 @@ export default function SetupGuide() {
                 cd D:\Fluency
               </code>
               <p className="text-[10px] text-muted-foreground font-mono mt-2">
-                # Install all packages
+                # Install main app packages
               </p>
               <code className="text-[11px] text-coral font-mono block">
                 bun install
               </code>
+              <p className="text-[10px] text-muted-foreground font-mono mt-2">
+                # Install WebSocket service packages
+              </p>
+              <code className="text-[11px] text-coral font-mono block">
+                bun run ws:install
+              </code>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1.5">
-              This downloads all required packages. Wait for it to finish.
+              Both installs must complete before starting. Wait for each to finish.
             </p>
           </div>
         </div>
@@ -206,16 +212,16 @@ export default function SetupGuide() {
               </p>
               <div className="bg-charcoal rounded-xl p-2.5 overflow-x-auto">
                 <code className="text-[11px] text-coral font-mono">
-                  cd D:\Fluency\mini-services\ws-service
+                  cd D:\Fluency
                 </code>
               </div>
               <div className="bg-charcoal rounded-xl p-2.5 overflow-x-auto mt-1">
                 <code className="text-[11px] text-coral font-mono">
-                  bun run dev
+                  bun run ws
                 </code>
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                WebSocket on <strong>port 3004</strong>
+                WebSocket on <strong>port 3004</strong> — keep this terminal open!
               </p>
             </div>
           </div>
@@ -267,10 +273,10 @@ export default function SetupGuide() {
                 <p className="text-[10px] text-muted-foreground">
                   In the extension popup, enter{" "}
                   <code className="bg-secondary px-1 rounded">
-                    http://localhost:3004
+                    http://localhost:3000
                   </code>{" "}
-                  as the Server URL. Go to Watchtower tab → generate a room code →
-                  enter it in the extension.
+                  as the Web App URL (it auto-routes to port 3004). Go to Watchtower tab → generate a room code →
+                  enter it in the extension → click Connect.
                 </p>
               </div>
             </div>
@@ -341,8 +347,7 @@ export default function SetupGuide() {
                 <strong className="text-charcoal">
                   Extension &quot;websocket error&quot;
                 </strong>{" "}
-                → Make sure BOTH servers are running (web app on 3000 AND
-                ws-service on 3004).
+                → Make sure BOTH terminals are running: <code className="bg-secondary px-1 rounded text-[10px]">bun run dev</code> (port 3000) AND <code className="bg-secondary px-1 rounded text-[10px]">bun run ws</code> (port 3004). Check that <code className="bg-secondary px-1 rounded text-[10px]">bun run ws:install</code> was done.
               </p>
             </div>
           </div>

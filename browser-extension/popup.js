@@ -45,14 +45,19 @@
     const qIdx = url.indexOf("?");
     if (hashIdx > -1) url = url.substring(0, hashIdx);
     if (qIdx > -1) url = url.substring(0, qIdx);
-    // Extract port from URL (default to 3004 if on localhost without explicit port)
+    // Extract host and optional port
     const urlMatch = url.match(/^(https?:\/\/[^:]+)(?::(\d+))?/);
-    if (urlMatch && !urlMatch[2] && url.includes("localhost")) {
-      // Localhost without port — default to 3004 (direct ws-service)
-      return `${url}:3004`;
+    if (urlMatch) {
+      const base = urlMatch[1];
+      const port = urlMatch[2];
+      // For localhost: ALWAYS use port 3004 (the WebSocket service)
+      // regardless of what port the user entered (3000 = web app, 3004 = ws)
+      if (base.includes("localhost") || base.includes("127.0.0.1")) {
+        return `${base}:3004`;
+      }
+      // For remote URLs: use the port user provided, or default to the URL as-is
+      return url;
     }
-    // If user provides a specific port, connect there directly
-    // If it's a remote URL without port, connect to standard HTTP/HTTPS port
     return url;
   }
 
