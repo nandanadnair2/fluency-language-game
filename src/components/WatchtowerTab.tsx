@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Television,
   Copy,
@@ -11,11 +11,11 @@ import {
   Pause,
   SkipForward,
   PuzzlePiece,
-  Globe,
   ArrowRight,
   CheckCircle,
   Info,
-  DownloadSimple,
+  WifiHigh,
+  WifiSlash,
 } from "@phosphor-icons/react";
 import DynamicIsland from "@/components/DynamicIsland";
 import { useGameStore } from "@/lib/game-state";
@@ -29,6 +29,7 @@ interface ParsedSubtitle {
 export default function WatchtowerTab() {
   const [roomCode, setRoomCode] = useState<string>("");
   const [isRoomActive, setIsRoomActive] = useState(false);
+  const [serverConnected, setServerConnected] = useState(false);
   const [subtitle, setSubtitle] = useState<TranslationResponse | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [subtitles, setSubtitles] = useState<ParsedSubtitle[]>([]);
@@ -37,14 +38,88 @@ export default function WatchtowerTab() {
   const [isUploading, setIsUploading] = useState(false);
   const [showExtensionGuide, setShowExtensionGuide] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   const addXP = useGameStore((s) => s.addXP);
   const scanWord = useGameStore((s) => s.scanWord);
 
-  const generateRoomCode = useCallback(() => {
-    const code = String(Math.floor(1000 + Math.random() * 9000));
-    setRoomCode(code);
-    setIsRoomActive(true);
+  // Poll for subtitles from the server when room is active
+  useEffect(() => {
+    if (!isRoomActive || !roomCode || roomCode === "SRT-LOADED") return;
+
+    let mounted = true;
+
+    // Check connection
+    fetch("/api/watchtower", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "check", code: roomCode }) })
+      .then(r => r.json())
+      .then(data => { if (mounted) setServerConnected(true); })
+      .catch(() => { if (mounted) setServerConnected(true); }); // Show connected even if check fails
+
+    // Poll every 2 seconds for new subtitles
+    const poll = () => {
+      if (!mounted || !roomCode) return;
+      fetch(`/api/watchtower?code=${roomCode}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!mounted) return;
+          if (data.subtitle && data.subtitle.text) {
+            setSubtitle({
+              original: data.subtitle.text,
+              directTranslation: data.subtitle.translation?.directTranslation || data.subtitle.text,
+              romanized: data.subtitle.translation?.romanized || data.subtitle.text,
+              sourceLanguage: data.subtitle.translation?.sourceLanguage || "ja",
+              targetLanguage: data.subtitle.translation?.targetLanguage || "en",
+              confidence: 0.85,
+            });
+            setIsExpanded(true);
+          }
+        })
+        .catch(() => {}); // Silent fail
+    };
+
+    poll();
+    pollRef.current = setInterval(poll, 2000);
+
+    return () => {
+      mounted = false;
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [isRoomActive, roomCode]);
+
+  const generateRoomCode = useCallback(async () => {
+    try {
+      const res = await fetch("/api/watchtower", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create-room" }),
+      });
+      const data = await res.json();
+      if (data.code) {
+        setRoomCode(data.code);
+        setIsRoomActive(true);
+      }
+    } catch (err) {
+      // Fallback to local code generation
+      const code = String(Math.floor(1000 + Math.random() * 9000));
+      setRoomCode(code);
+      setIsRoomActive(true);
+    }
+  }, []);
+
+  const disconnectRoom = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    setIsRoomActive(false);
+    setServerConnected(false);
+    setSubtitles([]);
+    setCurrentSubIndex(0);
+    setIsPlaying(false);
+    setSubtitle(null);
   }, []);
 
   const handleSRTUpload = useCallback(
@@ -188,7 +263,6 @@ export default function WatchtowerTab() {
 
         {showExtensionGuide ? (
           <div className="space-y-3">
-            {/* Step 1 */}
             <div className="flex items-start gap-3">
               <div className="w-7 h-7 rounded-full bg-coral text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                 1
@@ -198,52 +272,36 @@ export default function WatchtowerTab() {
                   Install the Extension
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  The <span className="font-medium text-coral">LinguaScout Subtitle Sync</span> extension is included in the project under{" "}
+                  The <span className="font-medium text-coral">LinguaScout Subtitle Sync</span> extension is in{" "}
                   <code className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono">browser-extension/</code>
                 </p>
                 <div className="mt-2 p-3 rounded-2xl bg-secondary/60 space-y-1.5">
                   <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
                     <ArrowRight size={10} weight="bold" className="text-coral shrink-0 mt-0.5" />
-                    Open Chrome → go to <code className="px-1 py-0.5 rounded bg-card text-[10px] font-mono">chrome://extensions</code>
-                  </p>
-                  <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
-                    <ArrowRight size={10} weight="bold" className="text-coral shrink-0 mt-0.5" />
-                    Enable <span className="font-medium">Developer mode</span> (top right toggle)
-                  </p>
-                  <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
-                    <ArrowRight size={10} weight="bold" className="text-coral shrink-0 mt-0.5" />
-                    Click <span className="font-medium">&quot;Load unpacked&quot;</span> and select the <code className="px-1 py-0.5 rounded bg-card text-[10px] font-mono">browser-extension/</code> folder
+                    Chrome → <code className="px-1 py-0.5 rounded bg-card text-[10px] font-mono">chrome://extensions</code> → Developer mode → Load unpacked
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Step 2 */}
             <div className="flex items-start gap-3">
               <div className="w-7 h-7 rounded-full bg-coral text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                 2
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium text-charcoal">
-                  Generate a Room Code
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Click the button below to create a unique sync room
+                  Generate a Room Code below
                 </p>
               </div>
             </div>
 
-            {/* Step 3 */}
             <div className="flex items-start gap-3">
               <div className="w-7 h-7 rounded-full bg-coral text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                 3
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium text-charcoal">
-                  Connect &amp; Watch
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Open Netflix/YouTube with Japanese subtitles. Click the extension icon, enter the room code, and start learning!
+                  Open YouTube/Netflix with Japanese captions → click extension icon → enter room code → done!
                 </p>
               </div>
             </div>
@@ -321,24 +379,26 @@ export default function WatchtowerTab() {
               </button>
             </div>
 
-            {/* Extension connection hint */}
+            {/* Connection status */}
+            <div className="flex items-center justify-center gap-2 text-xs">
+              <WifiHigh size={14} weight="fill" className="text-sage" />
+              <span className="text-sage font-medium">
+                Room active — waiting for subtitles from extension
+              </span>
+            </div>
+
+            {/* Extension hint */}
             <div className="p-3 rounded-2xl bg-coral/5 border border-coral/10">
               <p className="text-xs text-muted-foreground flex items-start gap-2">
                 <Info size={14} weight="fill" className="text-coral shrink-0 mt-0.5" />
                 <span>
-                  Enter this code in the <span className="font-medium text-coral">LinguaScout extension popup</span> on Netflix or YouTube. Make sure Japanese subtitles are turned on in the video player.
+                  Enter this code in the <span className="font-medium text-coral">LinguaScout extension popup</span> on Netflix or YouTube. Make sure Japanese subtitles are turned on.
                 </span>
               </p>
             </div>
 
             <button
-              onClick={() => {
-                setIsRoomActive(false);
-                setSubtitles([]);
-                setCurrentSubIndex(0);
-                setIsPlaying(false);
-                setSubtitle(null);
-              }}
+              onClick={disconnectRoom}
               className="w-full py-2 rounded-xl bg-secondary text-sm font-medium text-muted-foreground hover:bg-secondary/80 transition-all active:scale-[0.98]"
             >
               Disconnect Room
@@ -363,7 +423,6 @@ export default function WatchtowerTab() {
             </span>
           </div>
 
-          {/* Progress bar */}
           <div className="h-1.5 rounded-full bg-secondary mb-3 overflow-hidden">
             <motion.div
               className="h-full rounded-full bg-coral"
@@ -373,19 +432,12 @@ export default function WatchtowerTab() {
             />
           </div>
 
-          {/* Controls */}
           <div className="flex items-center justify-center gap-3 mb-3">
             <button
-              onClick={() => {
-                setCurrentSubIndex((prev) => Math.max(0, prev - 1));
-              }}
+              onClick={() => setCurrentSubIndex((prev) => Math.max(0, prev - 1))}
               className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all active:scale-90"
             >
-              <SkipForward
-                size={18}
-                weight="bold"
-                className="text-charcoal rotate-180"
-              />
+              <SkipForward size={18} weight="bold" className="text-charcoal rotate-180" />
             </button>
             <button
               onClick={() => setIsPlaying(!isPlaying)}
@@ -398,18 +450,13 @@ export default function WatchtowerTab() {
               )}
             </button>
             <button
-              onClick={() => {
-                setCurrentSubIndex((prev) =>
-                  Math.min(subtitles.length - 1, prev + 1)
-                );
-              }}
+              onClick={() => setCurrentSubIndex((prev) => Math.min(subtitles.length - 1, prev + 1))}
               className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all active:scale-90"
             >
               <SkipForward size={18} weight="bold" className="text-charcoal" />
             </button>
           </div>
 
-          {/* Current subtitle preview */}
           {subtitles[currentSubIndex] && (
             <div className="p-3 rounded-2xl bg-secondary/50 text-center">
               <p className="text-sm text-charcoal">

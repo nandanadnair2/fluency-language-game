@@ -40,7 +40,15 @@ export default function CameraScanner({
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          // AbortError is common when play() is interrupted by a new load
+          // (e.g., rapid camera toggling) — non-critical, camera still works
+          if ((playErr as DOMException).name !== 'AbortError') {
+            console.warn('Camera play error:', playErr);
+          }
+        }
       }
       setCameraActive(true);
     } catch (err) {

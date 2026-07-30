@@ -18,14 +18,13 @@ export default function ScannerTab() {
   const [showXPBadge, setShowXPBadge] = useState(false);
   const [detected, setDetected] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const scanCounterRef = useRef(0); // Prevent stale responses
+  const scanCounterRef = useRef(0);
 
   const addXP = useGameStore((s) => s.addXP);
   const scanWord = useGameStore((s) => s.scanWord);
 
-  // Core scan function — validates scan counter to prevent stale responses
   const performScan = useCallback(async (imageData: string) => {
-    const currentScan = ++scanCounterRef.current;
+    const scanId = ++scanCounterRef.current;
     setIsScanning(true);
     setDetected(false);
 
@@ -37,8 +36,8 @@ export default function ScannerTab() {
       });
       const data = await res.json();
 
-      // Only update if this is still the latest scan (no race condition)
-      if (data.original && currentScan === scanCounterRef.current) {
+      // Only accept if this is still the latest scan
+      if (data.original && scanId === scanCounterRef.current) {
         setTranslation(data);
         setDetected(true);
         setTimeout(() => setDetected(false), 3000);
@@ -46,7 +45,7 @@ export default function ScannerTab() {
     } catch (err) {
       console.error("Scan failed:", err);
     } finally {
-      if (currentScan === scanCounterRef.current) {
+      if (scanId === scanCounterRef.current) {
         setIsScanning(false);
       }
     }
@@ -96,13 +95,9 @@ export default function ScannerTab() {
   );
 
   const handleDemoScan = useCallback(() => {
+    if (isScanning) return; // Guard against rapid clicks
     performScan("demo");
-  }, [performScan]);
-
-  // Build a stable key from all translation fields to prevent stale renders
-  const translationKey = translation
-    ? `${translation.original}|${translation.directTranslation}|${translation.romanized}`
-    : "";
+  }, [performScan, isScanning]);
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -142,10 +137,9 @@ export default function ScannerTab() {
         </button>
       </div>
 
-      {/* Translation Cards — no outer AnimatePresence, let the inner one handle it */}
+      {/* Translation Cards — direct render, no AnimatePresence */}
       {translation && (
         <TranslationCards
-          key={translationKey}
           translation={translation}
           onSaveWord={handleSaveWord}
           savedWordId={savedWordId}

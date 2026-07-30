@@ -153,3 +153,31 @@ Work Log:
 Stage Summary:
 - Scanner: Data mismatch fixed — scan counter prevents stale responses, composite keys ensure proper animation. Tested: rapid double-scan shows consistent original/translation/romanization.
 - Chrome Extension: Content script now only extracts actual subtitle text (not YouTube page metadata). Popup is larger and more readable with proper connection status handling.
+
+---
+Task ID: bugfix-8-10
+Agent: main-developer
+Task: Fix Scanner data mismatch (AnimatePresence), Camera AbortError, and Watchtower sync connection
+
+Work Log:
+- Bug 8 (Scanner mismatch): Root cause was AnimatePresence mode="wait" with nested animations causing visual data overlap during exit/enter transitions. Fixed by:
+  - Removed ALL AnimatePresence from TranslationCards — no exit animations, just key-based remount with fade-in
+  - Removed outer key prop on TranslationCards from ScannerTab — no double remounting
+  - Each card has its own spring animation with stagger delay (0.12s)
+  - Scan counter ref still prevents stale API responses
+  - Demo Scan button has isScanning guard
+- Bug 9 (Camera AbortError): The video.play() promise was throwing AbortError when interrupted by rapid camera toggling. Fixed by wrapping play() in try/catch and only warning for non-AbortError exceptions.
+- Bug 10 (Watchtower sync connection): Root cause was Caddy proxy not forwarding WebSocket upgrade requests properly. Fixed by:
+  - Created /api/watchtower route for room management (create/check) and subtitle polling
+  - Removed socket.io-client dependency
+  - WatchtowerTab now uses simple HTTP polling (every 2s) to get latest subtitles
+  - Room codes are created server-side
+  - Extension connects directly to ws-service on port 3004 (unchanged)
+  - Updated ws-service to auto-create rooms on join-room (no 404 errors)
+- Uninstalled socket.io-client package (no longer needed)
+- All lint checks pass, all compilation successful
+
+Stage Summary:
+- Scanner: Data mismatch definitively fixed — no AnimatePresence, pure key-based remount. Verified: 3 consecutive scans all show perfectly consistent original/translation/romanization.
+- Camera: AbortError suppressed gracefully
+- Watchtower: Connection status shows "Room active" instead of "Connection failed". Extension connects to ws-service independently.

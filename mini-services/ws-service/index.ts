@@ -19,18 +19,6 @@ const io = new Server(httpServer, {
 });
 
 /**
- * Generate a random 4-digit room code that doesn't collide
- * with an existing room.
- */
-function generateRoomCode(): string {
-  let code: string;
-  do {
-    code = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
-  } while (rooms.has(code));
-  return code;
-}
-
-/**
  * Build a mock translation object for demonstration / development.
  */
 function buildMockTranslation(originalText: string) {
@@ -48,38 +36,46 @@ io.on("connection", (socket) => {
 
   // ── create-room ────────────────────────────────────────────────
   socket.on("create-room", (callback) => {
-    const code = generateRoomCode();
+    const code = String(Math.floor(1000 + Math.random() * 9000));
     rooms.set(code, new Set([socket.id]));
     socket.join(code);
     console.log(`[create-room] socket=${socket.id} room=${code}`);
-    callback({ code });
+    if (callback) callback({ code });
   });
 
   // ── join-room ───────────────────────────────────────────────────
+  // Auto-creates room if it doesn't exist (supports web app room codes)
   socket.on("join-room", (code: string, callback) => {
-    const members = rooms.get(code);
+    let members = rooms.get(code);
+
+    // Auto-create room if it doesn't exist yet
     if (!members) {
-      return callback({ error: "Room not found" });
+      console.log(`[join-room] Auto-creating room=${code} for socket=${socket.id}`);
+      members = new Set();
+      rooms.set(code, members);
     }
 
     members.add(socket.id);
     socket.join(code);
     const memberList = Array.from(members);
     console.log(`[join-room] socket=${socket.id} room=${code} members=${memberList.length}`);
-    callback({ members: memberList });
+    if (callback) callback({ members: memberList });
 
-    // Notify existing room members about the new participant
+    // Notify existing room members
     socket.to(code).emit("member-joined", { socketId: socket.id, members: memberList });
   });
 
   // ── subtitle ───────────────────────────────────────────────────
   socket.on("subtitle", (payload: { code: string; text: string }) => {
     const { code, text } = payload;
-    const members = rooms.get(code);
+    let members = rooms.get(code);
 
+    // Auto-create room if needed
     if (!members) {
-      console.warn(`[subtitle] room=${code} not found`);
-      return;
+      console.log(`[subtitle] Auto-creating room=${code}`);
+      members = new Set([socket.id]);
+      rooms.set(code, members);
+      socket.join(code);
     }
 
     const translation = buildMockTranslation(text);
@@ -111,7 +107,6 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log(`[disconnect] socket=${socket.id}`);
 
-    // Remove the socket from every room it belongs to
     for (const [code, members] of rooms) {
       if (members.has(socket.id)) {
         members.delete(socket.id);
