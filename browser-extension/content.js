@@ -1,10 +1,10 @@
 /**
- * Fluency Content Script v5
+ * Fluency Content Script v6
  * Detects subtitle/caption text from YouTube and Netflix.
  * Falls back to audio capture + ASR for videos WITHOUT closed captions.
  *
- * v5: Added PING responder so popup can actively query content script status.
- * Reports: is content script running, video found, audio capture state, etc.
+ * v6: All chrome.* API calls guarded against "Extension context invalidated"
+ * (happens when extension is reloaded but page not refreshed).
  */
 
 (function () {
@@ -27,7 +27,53 @@
   let ccDetected = false;
   let noCCTimer = null;
   let audioCaptureActive = false;
-  let audioCaptureStatus = null; // Stores last FLUENCY_AUDIO_STATUS from audio-capture.js
+  let audioCaptureStatus = null;
+  let extensionValid = true;
+
+  // ---------------------------------------------------------------
+  // Extension Context Guard
+  // Prevents "Extension context invalidated" errors when the
+  // extension is reloaded but the page hasn't been refreshed.
+  // ---------------------------------------------------------------
+  function isExtensionValid() {
+    try {
+      return !!chrome.runtime?.id;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function safeStorageSet(obj) {
+    try {
+      if (isExtensionValid()) {
+        chrome.storage.local.set(obj);
+      }
+    } catch (e) {
+      extensionValid = false;
+    }
+  }
+
+  function safeStorageGet(keys, callback) {
+    try {
+      if (!isExtensionValid()) return;
+      chrome.storage.local.get(keys, callback);
+    } catch (e) {
+      extensionValid = false;
+    }
+  }
+
+  function safeSendMessage(msg, callback) {
+    try {
+      if (!isExtensionValid()) return;
+      if (callback) {
+        chrome.runtime.sendMessage(msg, callback);
+      } else {
+        chrome.runtime.sendMessage(msg).catch(() => {});
+      }
+    } catch (e) {
+      extensionValid = false;
+    }
+  }
 
   // ---------------------------------------------------------------
   // Video Detection
@@ -62,20 +108,28 @@
   // ---------------------------------------------------------------
   function injectAudioCapture() {
     if (document.getElementById("__fluencyAudioScript")) return;
-    const script = document.createElement("script");
-    script.id = "__fluencyAudioScript";
-    script.src = chrome.runtime.getURL("audio-capture.js");
-    script.onload = () => {
-      console.log("[Fluency] Audio capture script injected successfully");
-    };
-    script.onerror = (e) => {
+
+    // Check if extension context is still valid before using chrome.runtime
+    if (!isExtensionValid()) {
+      console.warn("[Fluency] Extension context invalidated — cannot inject audio-capture.js. Refresh the page.");
+      return;
+    }
+
+    try {
+      const script = document.createElement("script");
+      script.id = "__fluencyAudioScript";
+      script.src = chrome.runtime.getURL("audio-capture.js");
+      script.onload = () => {
+        console.log("[Fluency] Audio capture script injected");
+      };
+      script.onerror = (e) => {
+        console.error("[Fluency] Failed to inject audio-capture.js:", e);
+      };
+      (document.head || document.documentElement).appendChild(script);
+    } catch (e) {
       console.error("[Fluency] Failed to inject audio-capture.js:", e);
-      // Store error for popup to read
-      chrome.storage.local.set({
-        fluency_contentStatus: "audio_inject_failed",
-      });
-    };
-    (document.head || document.documentElement).appendChild(script);
+      extensionValid = false;
+    }
   }
 
   // ---------------------------------------------------------------
@@ -83,26 +137,26 @@
   // ---------------------------------------------------------------
   window.addEventListener("message", (event) => {
     if (!event.data || typeof event.data.type !== "string") return;
+    if (!extensionValid) return; // Don't process if extension context is dead
 
-    // Audio chunk received — send to background for transcription
+    // Audio chunk received
     if (event.data.type === "FLUENCY_AUDIO_CHUNK") {
       handleAudioChunk(event.data.data, event.data.mimeType);
     }
 
-    // Audio capture status updates — forward to popup
+    // Audio capture status updates
     if (event.data.type === "FLUENCY_AUDIO_STATUS") {
       audioCaptureStatus = event.data;
       const status = event.data.status;
       if (status === "active" || status === "active_data") {
         audioCaptureActive = true;
-        chrome.storage.local.set({ fluency_audioMode: true });
       } else if (status === "stopped" || status === "error") {
         audioCaptureActive = false;
-        chrome.storage.local.set({ fluency_audioMode: false });
       }
 
-      // Store status in chrome.storage so popup can read it even if popup was closed
-      chrome.storage.local.set({
+      // Store in chrome.storage (guarded)
+      safeStorageSet({
+        fluency_audioMode: audioCaptureActive,
         fluency_audioStatus: status,
         fluency_audioError: event.data.error || null,
         fluency_audioCodec: event.data.codec || null,
@@ -111,8 +165,8 @@
         fluency_audioTracks: event.data.audioTracks || null,
       });
 
-      // Forward to popup via background
-      chrome.runtime.sendMessage({
+      // Forward to popup via background (guarded)
+      safeSendMessage({
         type: "FLUENCY_AUDIO_STATUS",
         status: status,
         error: event.data.error,
@@ -120,7 +174,7 @@
         audioTracks: event.data.audioTracks,
         chunksProduced: event.data.chunksProduced,
         elapsed: event.data.elapsed,
-      }).catch(() => {});
+      });
     }
   });
 
@@ -133,52 +187,55 @@
   let chunksCompleted = 0;
 
   function handleAudioChunk(base64Audio, mimeType) {
-    if (transcriptionPending) return;
+    if (transcriptionPending || !extensionValid) return;
     transcriptionPending = true;
     chunksSent++;
 
-    // Safety timeout: if background never responds with TRANSCRIBED, reset after 20s
+    // Safety timeout
     clearTimeout(transcriptionTimeout);
     transcriptionTimeout = setTimeout(() => {
-      console.warn("[Fluency] Transcription safety timeout — resetting pipeline");
+      console.warn("[Fluency] Transcription safety timeout");
       transcriptionPending = false;
       window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
     }, 20000);
 
-    // Send to background service worker
-    chrome.runtime.sendMessage(
-      {
-        type: "FLUENCY_AUDIO_CHUNK_BG",
-        data: base64Audio,
-        mimeType: mimeType,
-        chunkId: chunksSent,
-      },
-      (response) => {
-        if (!response) {
-          console.warn("[Fluency] Background not responding, using direct fetch");
-          directTranscribe(base64Audio, mimeType);
-          return;
-        }
-
-        if (response.status === "busy") {
-          console.log("[Fluency] Background is busy — will retry");
-          transcriptionPending = false;
-          clearTimeout(transcriptionTimeout);
-          setTimeout(() => {
-            window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
-          }, 2000);
-          return;
-        }
-
-        console.log(`[Fluency] Chunk #${chunksSent} sent to background`);
+    // Send to background (guarded)
+    try {
+      if (!isExtensionValid()) {
+        transcriptionPending = false;
+        return;
       }
-    );
+      chrome.runtime.sendMessage(
+        { type: "FLUENCY_AUDIO_CHUNK_BG", data: base64Audio, mimeType, chunkId: chunksSent },
+        (response) => {
+          if (!extensionValid) { transcriptionPending = false; return; }
+
+          if (!response) {
+            directTranscribe(base64Audio, mimeType);
+            return;
+          }
+          if (response.status === "busy") {
+            transcriptionPending = false;
+            clearTimeout(transcriptionTimeout);
+            setTimeout(() => {
+              window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
+            }, 2000);
+            return;
+          }
+          console.log(`[Fluency] Chunk #${chunksSent} sent to background`);
+        }
+      );
+    } catch (e) {
+      extensionValid = false;
+      transcriptionPending = false;
+      directTranscribe(base64Audio, mimeType);
+    }
   }
 
   function directTranscribe(base64Audio, mimeType) {
-    chrome.storage.local.get(["fluency_serverUrl"], (result) => {
-      const serverUrl = (result.fluency_serverUrl || "http://localhost:3000")
-        .trim().replace(/\/+$/, "");
+    safeStorageGet(["fluency_serverUrl"], (result) => {
+      if (!extensionValid) return;
+      const serverUrl = (result?.fluency_serverUrl || "http://localhost:3000").trim().replace(/\/+$/, "");
 
       fetch(`${serverUrl}/api/transcribe`, {
         method: "POST",
@@ -192,8 +249,7 @@
           clearTimeout(transcriptionTimeout);
           window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
         })
-        .catch((err) => {
-          console.error("[Fluency] Direct transcription failed:", err);
+        .catch(() => {
           transcriptionPending = false;
           clearTimeout(transcriptionTimeout);
           window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
@@ -203,12 +259,9 @@
 
   function handleTranscriptionResult(data) {
     chunksCompleted++;
-    console.log(`[Fluency] Transcription #${chunksCompleted}:`, data.text ? `"${data.text.slice(0, 50)}"` : "empty");
-
     if (data.text && data.text.trim().length > 0) {
-      const text = data.text.trim();
-      chrome.storage.local.set({
-        fluency_lastSubtitle: text,
+      safeStorageSet({
+        fluency_lastSubtitle: data.text.trim(),
         fluency_lastTimestamp: Date.now(),
         fluency_audioMode: true,
       });
@@ -216,60 +269,51 @@
   }
 
   // Listen for FLUENCY_TRANSCRIBED from background
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // PING from popup — respond with full diagnostic status
-    if (message.type === "FLUENCY_PING") {
-      const videoInfo = getVideoInfo();
-      const response = {
-        type: "FLUENCY_PONG",
-        host: HOST,
-        isYouTube: isYouTube,
-        isNetflix: isNetflix,
-        contentScriptActive: true,
-        audioScriptInjected: !!document.getElementById("__fluencyAudioScript"),
-        audioCaptureStatus: audioCaptureStatus,
-        audioCaptureActive: audioCaptureActive,
-        ccDetected: ccDetected,
-        video: videoInfo,
-        chunksSent: chunksSent,
-        chunksCompleted: chunksCompleted,
-        transcriptionPending: transcriptionPending,
-        lastSubtitleText: lastSubtitleText,
-        timestamp: Date.now(),
-      };
-      console.log("[Fluency] Responding to PING:", JSON.stringify(response).slice(0, 200));
-      sendResponse(response);
-      return true;
-    }
-
-    // Transcription result from background
-    if (message.type === "FLUENCY_TRANSCRIBED") {
-      clearTimeout(transcriptionTimeout);
-
-      if (message.error) {
-        console.warn("[Fluency] Transcription error:", message.error);
-      } else if (message.text) {
-        handleTranscriptionResult({ text: message.text });
-      } else {
-        console.log("[Fluency] Transcription returned empty");
+  try {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      // PING from popup
+      if (message.type === "FLUENCY_PING") {
+        const videoInfo = getVideoInfo();
+        sendResponse({
+          type: "FLUENCY_PONG",
+          host: HOST,
+          isYouTube, isNetflix,
+          contentScriptActive: true,
+          extensionValid: extensionValid,
+          audioScriptInjected: !!document.getElementById("__fluencyAudioScript"),
+          audioCaptureStatus: audioCaptureStatus,
+          audioCaptureActive: audioCaptureActive,
+          ccDetected, video: videoInfo,
+          chunksSent, chunksCompleted, transcriptionPending,
+          lastSubtitleText,
+          timestamp: Date.now(),
+        });
+        return true;
       }
 
-      transcriptionPending = false;
-      window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
-      sendResponse({ received: true });
-    }
-  });
+      // Transcription result
+      if (message.type === "FLUENCY_TRANSCRIBED") {
+        clearTimeout(transcriptionTimeout);
+        if (message.error) {
+          console.warn("[Fluency] Transcription error:", message.error);
+        } else if (message.text) {
+          handleTranscriptionResult({ text: message.text });
+        }
+        transcriptionPending = false;
+        window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
+        sendResponse({ received: true });
+      }
+    });
+  } catch (e) {
+    extensionValid = false;
+  }
 
   // ---------------------------------------------------------------
   // Subtitle selectors
   // ---------------------------------------------------------------
   function getSubtitleSelectors() {
-    if (isYouTube) {
-      return [".ytp-caption-segment", ".caption-visual-line", ".html5-video-player .caption-text"];
-    }
-    if (isNetflix) {
-      return [".player-timedtext-text", ".timed-text-container .timed-text", "[class*='timedtext'][class*='text']"];
-    }
+    if (isYouTube) return [".ytp-caption-segment", ".caption-visual-line", ".html5-video-player .caption-text"];
+    if (isNetflix) return [".player-timedtext-text", ".timed-text-container .timed-text", "[class*='timedtext'][class*='text']"];
     return [];
   }
 
@@ -282,16 +326,13 @@
       current = current.parentElement;
     }
     const rect = el.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return false;
-    if (rect.width < 50 || rect.height < 10) return false;
-    return true;
+    return rect.width > 50 && rect.height > 10;
   }
 
   function looksLikeSubtitle(text) {
-    if (!text || text.length === 0) return false;
-    if (text.length > 200) return false;
+    if (!text || text.length < 2 || text.length > 200) return false;
     if (/https?:\/\//.test(text)) return false;
-    const metadataPatterns = [
+    const patterns = [
       /\d{1,3}(,\d{3})*(,\d{3})+\s*(views|subscribers)/i, /\d+:\d{2}/,
       /views?/i, /subscribe/i, /share/i, /save/i, /copy link/i,
       /sign in/i, /sign out/i, /settings/i, /shopping/i,
@@ -302,25 +343,16 @@
       /recommendation/i, /watch history/i,
       /recapping/i, /years ago/i,
     ];
-    for (const pattern of metadataPatterns) {
-      if (pattern.test(text)) return false;
-    }
-    if (text.length < 2) return false;
-    if (!/[a-zA-Z\u3000-\u9fff\u3040-\u309f\u30a0-\u30ff]/.test(text)) return false;
-    return true;
+    for (const p of patterns) { if (p.test(text)) return false; }
+    return /[a-zA-Z\u3000-\u9fff\u3040-\u309f\u30a0-\u30ff]/.test(text);
   }
 
   function extractSubtitleText() {
-    const selectors = getSubtitleSelectors();
-    for (const selector of selectors) {
-      const elements = document.querySelectorAll(selector);
-      for (const el of elements) {
+    for (const selector of getSubtitleSelectors()) {
+      for (const el of document.querySelectorAll(selector)) {
         if (!isSubtitleElement(el)) continue;
         const text = (el.textContent || "").trim();
-        if (text && looksLikeSubtitle(text)) {
-          ccDetected = true;
-          return text;
-        }
+        if (text && looksLikeSubtitle(text)) { ccDetected = true; return text; }
       }
     }
     return "";
@@ -329,10 +361,7 @@
   function onSubtitleDetected(text) {
     if (!text || text === lastSubtitleText) return;
     lastSubtitleText = text;
-    chrome.storage.local.set({
-      fluency_lastSubtitle: text,
-      fluency_lastTimestamp: Date.now(),
-    });
+    safeStorageSet({ fluency_lastSubtitle: text, fluency_lastTimestamp: Date.now() });
   }
 
   function handleMutation() {
@@ -342,9 +371,7 @@
       if (text) {
         onSubtitleDetected(text);
         clearTimeout(noCCTimer);
-        noCCTimer = setTimeout(() => {
-          if (!ccDetected) startFrameCapture();
-        }, 15000);
+        noCCTimer = setTimeout(() => { if (!ccDetected) startFrameCapture(); }, 15000);
       }
     }, 250);
   }
@@ -369,8 +396,9 @@
   function processFrame(imageDataUrl) {
     if (frameProcessing) return;
     frameProcessing = true;
-    chrome.storage.local.get(["fluency_serverUrl"], (result) => {
-      const serverUrl = (result.fluency_serverUrl || "http://localhost:3000").trim().replace(/\/+$/, "");
+    safeStorageGet(["fluency_serverUrl"], (result) => {
+      if (!extensionValid) { frameProcessing = false; return; }
+      const serverUrl = (result?.fluency_serverUrl || "http://localhost:3000").trim().replace(/\/+$/, "");
       fetch(`${serverUrl}/api/extract-text`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -378,7 +406,7 @@
       })
         .then((res) => res.json())
         .then((data) => {
-          if (data.primaryText && data.texts && data.texts.length > 0) {
+          if (data.primaryText && data.texts?.length > 0) {
             const combined = data.texts.filter(t => t.length > 1).join(" ");
             if (combined !== lastSubtitleText) onSubtitleDetected(combined);
           }
@@ -394,20 +422,9 @@
       const video = getVideoElement();
       if (video && !video.paused && !video.ended) captureFrame(video);
     }, 4000);
-    const video = getVideoElement();
-    if (video) captureFrame(video);
+    captureFrame(getVideoElement());
   }
 
-  function stopFrameCapture() {
-    if (frameCaptureInterval) {
-      clearInterval(frameCaptureInterval);
-      frameCaptureInterval = null;
-    }
-  }
-
-  // ---------------------------------------------------------------
-  // Poll for CC subtitles
-  // ---------------------------------------------------------------
   function startPolling() {
     setInterval(() => {
       const text = extractSubtitleText();
@@ -419,12 +436,15 @@
   // Init
   // ---------------------------------------------------------------
   function init() {
-    console.log(`[Fluency] Content script v5 active on ${HOST}`);
+    console.log(`[Fluency] Content script v6 active on ${HOST}`);
 
-    // Store that we're alive — popup can read this
-    chrome.storage.local.set({ fluency_contentStatus: "active", fluency_contentHost: HOST });
+    if (!isExtensionValid()) {
+      console.warn("[Fluency] Extension context invalid on init — refresh the page");
+      return;
+    }
 
-    // Inject audio capture script
+    safeStorageSet({ fluency_contentStatus: "active", fluency_contentHost: HOST });
+
     injectAudioCapture();
 
     const observer = new MutationObserver(handleMutation);
@@ -438,19 +458,14 @@
       if (text) {
         onSubtitleDetected(text);
       } else {
-        noCCTimer = setTimeout(() => {
-          if (!ccDetected && !audioCaptureActive) startFrameCapture();
-        }, 12000);
+        noCCTimer = setTimeout(() => { if (!ccDetected && !audioCaptureActive) startFrameCapture(); }, 12000);
       }
-
-      // Log video status for debugging
-      const videoInfo = getVideoInfo();
-      console.log("[Fluency] Video info:", JSON.stringify(videoInfo));
+      console.log("[Fluency] Video info:", JSON.stringify(getVideoInfo()));
     }, 3000);
 
     // Listen for video play events
     document.addEventListener("play", (e) => {
-      if (e.target && e.target.tagName === "VIDEO") {
+      if (e.target?.tagName === "VIDEO") {
         setTimeout(() => {
           const text = extractSubtitleText();
           if (!text && !ccDetected && !audioCaptureActive) startFrameCapture();

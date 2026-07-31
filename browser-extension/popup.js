@@ -264,6 +264,15 @@
         return;
       }
 
+      // Check if content script reports extension context is valid
+      if (response.extensionValid === false) {
+        updateAudioStage("error");
+        diagContent.textContent = "❌ Extension was reloaded but YouTube page is stale.\n\n🔄 REFRESH the YouTube page to fix this.\n\nThe old content script lost its connection\nto the extension after reload.";
+        subtitlePreview.textContent = "Refresh the YouTube page to re-activate the extension.";
+        subtitlePreview.classList.add("empty");
+        return;
+      }
+
       // Content script is active — check audio capture state
       const audioStatus = response.audioCaptureStatus;
       if (audioStatus) {
