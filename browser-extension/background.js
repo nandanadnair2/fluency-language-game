@@ -90,7 +90,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           audioBase64: message.data,
-          mimeType: message.mimeType || "audio/webm;codecs=opus",
+          mimeType: message.mimeType || "audio/wav",
         }),
       })
         .then((res) => {

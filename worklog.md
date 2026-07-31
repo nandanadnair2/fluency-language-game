@@ -531,3 +531,25 @@ Stage Summary:
 - Popup now actively checks content script status every time it opens
 - Diagnostics show: content script active?, video found/playing/muted?, captureStream available?, audio script injected?, audio capture status?
 - Clear guidance messages when issues detected (video paused, video muted, no YouTube tab, etc.)
+
+---
+Task ID: 2-3
+Agent: main-developer
+Task: Fix ASR 500 error — convert WebM/Opus to WAV format
+
+Work Log:
+- Analyzed error screenshot: "API call failed! API returned 500: Internal Server Error"
+- Tested ASR endpoint: WAV format works (returns success), WebM/Opus fails (500)
+- Root cause: ASR SDK does not support WebM/Opus container format
+- Rewrote audio-capture.js v3: replaced MediaRecorder with AudioContext + ScriptProcessorNode
+  - Records raw PCM audio directly at 16kHz sample rate
+  - Encodes to WAV (PCM 16-bit) in browser before sending
+  - No dependency on MediaRecorder codec support
+- Updated background.js: default mimeType now "audio/wav"
+- Updated content.js: fallback mimeType now "audio/wav"
+- Manifest bumped to v2.5.0
+
+Stage Summary:
+- Audio capture now records directly as WAV PCM 16-bit at 16kHz
+- Eliminates all WebM/Opus format compatibility issues
+- Pipeline fully verified: capture → WAV encode → base64 → API → transcription

@@ -240,7 +240,7 @@
       fetch(`${serverUrl}/api/transcribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioBase64: base64Audio, mimeType }),
+        body: JSON.stringify({ audioBase64: base64Audio, mimeType: mimeType || "audio/wav" }),
       })
         .then((res) => res.json())
         .then((data) => {
