@@ -319,11 +319,40 @@
     chrome.storage.local.set({ fluency_serverUrl: serverUrlInput.value });
   });
 
-  // Show latest subtitle even when not connected
+  // ---- Audio Capture Status ----
+  const audioIndicator = document.getElementById("audioIndicator");
+  const audioDetail = document.getElementById("audioDetail");
+
+  function updateAudioIndicator(active, detail) {
+    if (active) {
+      audioIndicator.classList.add("visible");
+      if (detail) audioDetail.textContent = detail;
+    } else {
+      audioIndicator.classList.remove("visible");
+    }
+  }
+
+  // Listen for audio status messages from content script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "FLUENCY_AUDIO_STATUS") {
+      if (message.status === "active") {
+        updateAudioIndicator(true, "Capturing audio for AI transcription…");
+      } else if (message.status === "error") {
+        updateAudioIndicator(true, "Audio error: " + (message.error || "unknown"));
+      } else {
+        updateAudioIndicator(false);
+      }
+    }
+  });
+
+  // Restore audio mode state on popup open
   chrome.storage.local.get(
-    ["fluency_lastSubtitle", "fluency_lastTimestamp"],
+    ["fluency_lastSubtitle", "fluency_lastTimestamp", "fluency_audioMode"],
     (result) => {
       updateSubtitlePreview(result.fluency_lastSubtitle || "");
+      if (result.fluency_audioMode) {
+        updateAudioIndicator(true, "Audio capture active on video page");
+      }
     }
   );
 

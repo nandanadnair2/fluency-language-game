@@ -22,7 +22,7 @@
 
     body {
       width: 400px;
-      min-height: 520px;
+      min-height: 540px;
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       background: var(--cream);
       color: var(--charcoal);
@@ -205,6 +205,45 @@
       font-weight: 600;
     }
 
+    /* Audio Capture Indicator */
+    .audio-indicator {
+      display: none;
+      background: linear-gradient(135deg, #FFF3EE 0%, #FDE8DC 100%);
+      border: 1px solid #F5C4B0;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--charcoal);
+      align-items: center;
+      gap: 10px;
+    }
+    .audio-indicator.visible {
+      display: flex;
+    }
+    .audio-indicator .audio-icon {
+      font-size: 18px;
+      animation: audioWave 1.2s ease-in-out infinite;
+    }
+    @keyframes audioWave {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+    }
+    .audio-indicator .audio-info {
+      flex: 1;
+    }
+    .audio-indicator .audio-label {
+      font-weight: 600;
+      color: var(--coral);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .audio-indicator .audio-detail {
+      color: var(--warm-gray);
+      font-size: 11px;
+      margin-top: 1px;
+    }
+
     /* Connection hint */
     .connection-hint {
       background: #FFF8F0;
@@ -309,9 +348,18 @@
       <span id="statusText" class="status-text">Not connected</span>
     </div>
 
+    <!-- Audio Capture Indicator -->
+    <div id="audioIndicator" class="audio-indicator">
+      <span class="audio-icon">🎙️</span>
+      <div class="audio-info">
+        <div class="audio-label">Audio Capture Active</div>
+        <div class="audio-detail" id="audioDetail">Capturing audio for transcription…</div>
+      </div>
+    </div>
+
     <!-- Connection hint (shown when not connected) -->
     <div id="connectionHint" class="connection-hint">
-      <strong>⚠️ Self-hosted setup required.</strong> This extension connects to a Fluency server running on <strong>your own machine</strong>. Enter the full URL of your self-hosted Fluency web app (e.g. <code>http://your-server.com</code> or <code>http://localhost:3000</code> if running locally). Generate a room code in the Watchtower tab, then enter it and click Connect.
+      <strong>⚠️ Self-hosted setup required.</strong> Enter your Fluency web app URL, generate a room code in the Watchtower tab, then connect. Works with <strong>any video</strong> — even without subtitles (uses audio capture + AI transcription).
     </div>
 
     <!-- Subtitle Preview -->
@@ -324,7 +372,8 @@
   </div>
 
   <div class="footer">
-    Open YouTube or Netflix → enable Japanese captions → connect to start syncing.
+    Open YouTube or Netflix → play any video → connect to start syncing.
+    <br><strong>Works with or without closed captions!</strong>
   </div>
 
   <script src="socket.io.min.js"></script>

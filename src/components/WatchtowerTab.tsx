@@ -405,7 +405,7 @@ export default function WatchtowerTab() {
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
           Type or paste Japanese text, upload subtitles, or sync with our Chrome Extension
-          for live translation while watching shows!
+          for live translation. Works with <strong>any video</strong> — even without subtitles!
         </p>
       </div>
 
@@ -607,7 +607,7 @@ export default function WatchtowerTab() {
                   <div className="flex items-start gap-2">
                     <Info size={14} weight="fill" className="text-butter shrink-0 mt-0.5" />
                     <span className="text-[11px] text-muted-foreground">
-                      <span className="font-medium text-butter">Self-hosting required for extension sync.</span> You need to run Fluency on your own machine.
+                      <span className="font-medium text-butter">Self-hosting required for extension sync.</span> Run Fluency on your own machine. The extension works with <span className="font-medium text-butter">any video</span> — even without subtitles (uses audio capture + AI transcription).
                     </span>
                   </div>
                   <a

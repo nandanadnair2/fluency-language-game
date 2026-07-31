@@ -442,3 +442,47 @@ Stage Summary:
 - Profile in Settings: Done — Edit Profile section with avatar/username now inside Settings panel
 - Leaderboard: Enhanced — Nearby/Global toggle, region labels, expandable list, weekly XP ranking
 - All changes verified via agent-browser (Settings panel with Edit Profile confirmed)
+
+---
+Task ID: 3
+Agent: main-developer
+Task: Add audio capture support for videos without closed captions
+
+Work Log:
+- Read ASR skill docs — z-ai-web-dev-sdk supports `zai.audio.asr.create({ file_base64 })` for speech-to-text
+- Created `browser-extension/audio-capture.js` — injected into MAIN world via web_accessible_resources
+  - Uses `HTMLMediaElement.captureStream()` to get audio from video elements
+  - MediaRecorder with Opus codec, 16kbps, 4-second chunks
+  - Converts chunks to base64 and posts to content script via window.postMessage
+  - Auto-starts on video play, stops on pause/ended/seek
+  - DRM error handling with fallback message
+- Updated `browser-extension/content.js` v3:
+  - Injects audio-capture.js into MAIN world on YouTube/Netflix
+  - Listens for FLUENCY_AUDIO_CHUNK messages
+  - Sends chunks to `/api/transcribe` endpoint for ASR
+  - Stores transcribed text in chrome.storage like regular CC subtitles
+  - Keeps frame capture (VLM) as secondary fallback
+  - Pending-transcription flag prevents queue buildup
+- Updated `browser-extension/manifest.json` v2.1.0:
+  - Added `web_accessible_resources` for audio-capture.js
+  - Updated description to mention audio capture support
+- Updated `browser-extension/popup.html`:
+  - Added animated 🎙️ audio capture indicator with status
+  - Updated connection hint to mention "any video — even without subtitles"
+- Updated `browser-extension/popup.js`:
+  - Added chrome.runtime.onMessage listener for FLUENCY_AUDIO_STATUS
+  - Restores audio mode state from chrome.storage on popup open
+- Created `src/app/api/transcribe/route.ts`:
+  - Accepts base64 audio data
+  - Calls z-ai-web-dev-sdk ASR for transcription
+  - Returns { text, success }
+  - Handles empty/no-speech gracefully
+- Updated WatchtowerTab description text to mention audio capture
+- Regenerated project ZIP (1.5MB) with all updates
+
+Stage Summary:
+- Audio capture pipeline: video → captureStream() → MediaRecorder → base64 → /api/transcribe → ASR → text → chrome.storage → popup → ws-service → web app → translate
+- Works alongside existing CC detection (CC takes priority, audio capture activates when no CC found)
+- Frame capture (VLM) remains as tertiary fallback
+- All lint passes clean
+- ZIP updated for user re-download

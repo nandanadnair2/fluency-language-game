@@ -1,8 +1,8 @@
 /**
- * Fluency Content Script v2
+ * Fluency Content Script v3
  * Detects subtitle/caption text from YouTube and Netflix.
- * Also supports videos WITHOUT closed captions by periodically
- * capturing video frames and sending them to the VLM API for text extraction.
+ * Falls back to audio capture + ASR for videos WITHOUT closed captions.
+ * Also supports frame capture as a secondary fallback.
  */
 
 (function () {
@@ -24,6 +24,92 @@
   let frameProcessing = false;
   let ccDetected = false;
   let noCCTimer = null;
+  let audioCaptureActive = false;
+
+  // ---------------------------------------------------------------
+  // Inject audio-capture.js into the MAIN world
+  // ---------------------------------------------------------------
+  function injectAudioCapture() {
+    if (document.getElementById("__fluencyAudioScript")) return;
+    const script = document.createElement("script");
+    script.id = "__fluencyAudioScript";
+    script.src = chrome.runtime.getURL("audio-capture.js");
+    script.onload = () => {
+      console.log("[Fluency] Audio capture script injected");
+    };
+    (document.head || document.documentElement).appendChild(script);
+  }
+
+  // ---------------------------------------------------------------
+  // Listen for messages from audio-capture.js (MAIN world)
+  // ---------------------------------------------------------------
+  window.addEventListener("message", (event) => {
+    if (!event.data || typeof event.data.type !== "string") return;
+
+    // Audio chunk received — send to /api/transcribe
+    if (event.data.type === "FLUENCY_AUDIO_CHUNK") {
+      handleAudioChunk(event.data.data, event.data.mimeType);
+    }
+
+    // Audio capture status updates — forward to popup
+    if (event.data.type === "FLUENCY_AUDIO_STATUS") {
+      chrome.runtime.sendMessage({
+        type: "FLUENCY_AUDIO_STATUS",
+        status: event.data.status,
+        error: event.data.error,
+      });
+      if (event.data.status === "active") {
+        audioCaptureActive = true;
+        chrome.storage.local.set({ fluency_audioMode: true });
+      } else if (event.data.status === "stopped" || event.data.status === "error") {
+        audioCaptureActive = false;
+        chrome.storage.local.set({ fluency_audioMode: false });
+      }
+    }
+  });
+
+  // ---------------------------------------------------------------
+  // Audio Transcription — send chunk to /api/transcribe
+  // ---------------------------------------------------------------
+  let transcriptionPending = false;
+
+  function handleAudioChunk(base64Audio, mimeType) {
+    if (transcriptionPending) return;
+    transcriptionPending = true;
+
+    chrome.storage.local.get(["fluency_serverUrl"], (result) => {
+      const serverUrl = (result.fluency_serverUrl || "http://localhost:3000")
+        .trim()
+        .replace(/\/+$/, "");
+
+      fetch(`${serverUrl}/api/transcribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audioBase64: base64Audio, mimeType }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.text && data.text.trim().length > 0) {
+            const text = data.text.trim();
+            // Store transcribed text as subtitle (same flow as CC)
+            chrome.storage.local.set({
+              fluency_lastSubtitle: text,
+              fluency_lastTimestamp: Date.now(),
+              fluency_audioMode: true,
+            });
+            console.log("[Fluency] Audio transcribed:", text.slice(0, 60));
+          }
+          transcriptionPending = false;
+          // Tell audio-capture.js it can send the next chunk
+          window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
+        })
+        .catch((err) => {
+          console.warn("[Fluency] Transcription failed:", err.message);
+          transcriptionPending = false;
+          window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
+        });
+    });
+  }
 
   // ---------------------------------------------------------------
   // Subtitle selectors — ONLY target the actual subtitle containers
@@ -133,7 +219,7 @@
   }
 
   // ---------------------------------------------------------------
-  // Frame capture for videos WITHOUT closed captions
+  // Frame capture for videos WITHOUT closed captions (fallback)
   // Captures video frames and sends to VLM for text extraction
   // ---------------------------------------------------------------
   function getVideoElement() {
@@ -149,7 +235,6 @@
 
     try {
       const canvas = document.createElement("canvas");
-      // Downscale to reduce size — 640px wide is enough for text extraction
       const scale = Math.min(640 / video.videoWidth, 1);
       canvas.width = Math.floor(video.videoWidth * scale);
       canvas.height = Math.floor(video.videoHeight * scale);
@@ -170,13 +255,12 @@
     if (frameProcessing) return;
     frameProcessing = true;
 
-    // Send to Fluency server for VLM text extraction
-    // The server URL is stored in chrome.storage
     chrome.storage.local.get(["fluency_serverUrl"], (result) => {
-      const serverUrl = result.fluency_serverUrl || "http://localhost:3000";
-      const baseUrl = serverUrl.trim().replace(/\/+$/, "");
+      const serverUrl = (result.fluency_serverUrl || "http://localhost:3000")
+        .trim()
+        .replace(/\/+$/, "");
 
-      fetch(`${baseUrl}/api/extract-text`, {
+      fetch(`${serverUrl}/api/extract-text`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageData: imageDataUrl }),
@@ -192,8 +276,7 @@
           }
           frameProcessing = false;
         })
-        .catch((err) => {
-          // Server not running or other error — silently ignore
+        .catch(() => {
           frameProcessing = false;
         });
     });
@@ -203,7 +286,6 @@
     if (frameCaptureInterval) return;
     console.log("[Fluency] No CC detected — starting frame capture for text extraction");
 
-    // Capture a frame every 4 seconds
     frameCaptureInterval = setInterval(() => {
       const video = getVideoElement();
       if (video && !video.paused && !video.ended) {
@@ -211,7 +293,6 @@
       }
     }, 4000);
 
-    // Capture one immediately
     const video = getVideoElement();
     if (video) captureFrame(video);
   }
@@ -237,7 +318,10 @@
   // Main
   // ---------------------------------------------------------------
   function init() {
-    console.log(`[Fluency] Content script v2 active on ${HOST}`);
+    console.log(`[Fluency] Content script v3 active on ${HOST}`);
+
+    // Inject audio capture script into the page (MAIN world)
+    injectAudioCapture();
 
     const observer = new MutationObserver(handleMutation);
     observer.observe(document.body, {
@@ -254,21 +338,22 @@
       if (text) {
         onSubtitleDetected(text);
       } else {
-        // No CC found after initial scan — start frame capture after delay
+        // No CC found — start frame capture after delay
+        // Audio capture is handled by the injected audio-capture.js
         noCCTimer = setTimeout(() => {
-          if (!ccDetected) startFrameCapture();
-        }, 10000);
+          if (!ccDetected && !audioCaptureActive) {
+            startFrameCapture();
+          }
+        }, 12000);
       }
     }, 3000);
 
-    // Listen for video play events to restart frame capture
+    // Listen for video play events
     document.addEventListener("play", (e) => {
       if (e.target && e.target.tagName === "VIDEO") {
-        const video = e.target;
-        // Check if CC exists
         setTimeout(() => {
           const text = extractSubtitleText();
-          if (!text && !ccDetected) {
+          if (!text && !ccDetected && !audioCaptureActive) {
             startFrameCapture();
           }
         }, 5000);
