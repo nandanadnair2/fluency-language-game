@@ -136,7 +136,7 @@ export default function DynamicIsland({
             {!expanded && (
               <motion.button
                 onClick={onToggleExpand}
-                className="glass-card rounded-full px-6 py-4 shadow-2xl flex items-center gap-3 hover:shadow-[0_0_40px_rgba(255,123,90,0.2)] transition-all active:scale-95 max-w-full"
+                className="rounded-full px-6 py-4 shadow-2xl flex items-center gap-3 hover:shadow-[0_0_40px_rgba(255,123,90,0.2)] transition-all active:scale-95 max-w-full bg-white dark:bg-[#1c1a14] border border-border/30"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.97 }}
               >
@@ -158,7 +158,7 @@ export default function DynamicIsland({
             {/* Expanded card mode */}
             {expanded && (
               <motion.div
-                className="glass-card rounded-3xl shadow-2xl overflow-hidden border border-coral/15"
+                className="rounded-3xl shadow-2xl overflow-hidden border border-coral/15 bg-white dark:bg-[#1c1a14]"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ type: "spring", stiffness: 300, damping: 25 }}

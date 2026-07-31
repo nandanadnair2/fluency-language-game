@@ -420,3 +420,25 @@ Stage Summary:
 - Leaderboard: 8-player ranked list with real player inserted at realistic position, 7 simulated Japanese-themed learners, weekly XP badges, gold/silver/bronze icons, staggered row animations
 - Header avatar: 24px circle in top bar shows player avatar across all tabs
 - Modified files: src/lib/game-state.ts, src/components/ProfileTab.tsx, src/components/Leaderboard.tsx (new), src/app/page.tsx
+
+---
+Task ID: 2
+Agent: main-developer
+Task: Fix Chrome Extension icons, make translation card opaque, fix Quick Translate bug, move profile to Settings, enhance leaderboard
+
+Work Log:
+- Diagnosed Chrome Extension icon error: placeholder text files instead of real PNGs
+- Generated proper 16x16, 48x48, 128x128 PNG icons with Python/PIL (coral "F" on rounded square)
+- Replaced `glass-card` class with solid `bg-white dark:bg-[#1c1a14]` in DynamicIsland for opaque translation cards
+- Rewrote `/api/translate` LLM prompt with explicit Japanese↔English rules to prevent Japanese appearing in English translation field
+- Moved profile editing section (avatar upload + username edit) from standalone card into Settings panel in ProfileTab
+- Enhanced Leaderboard component with Nearby/Global toggle, region-based player names, "Show more learners" expand, and weekly XP ranking
+- Regenerated project ZIP (1.5MB) with fixed icons
+
+Stage Summary:
+- Chrome Extension icons: Fixed — generated real PNG icons at all 3 sizes
+- Translation card opacity: Fixed — solid white background replaces glass-card transparency
+- Quick Translate language bug: Fixed — clearer LLM prompt prevents Japanese in English field
+- Profile in Settings: Done — Edit Profile section with avatar/username now inside Settings panel
+- Leaderboard: Enhanced — Nearby/Global toggle, region labels, expandable list, weekly XP ranking
+- All changes verified via agent-browser (Settings panel with Edit Profile confirmed)

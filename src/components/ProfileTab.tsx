@@ -183,93 +183,6 @@ export default function ProfileTab() {
         </motion.button>
       </div>
 
-      {/* Profile Section — avatar + username editing */}
-      <motion.div
-        className="p-5 rounded-3xl bg-card shadow-xl border border-border/50"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <h3 className="font-serif text-sm font-bold text-charcoal mb-3">Profile</h3>
-
-        <div className="flex items-start gap-4">
-          {/* Avatar */}
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="w-12 h-12 rounded-full bg-coral/10 flex items-center justify-center overflow-hidden flex-shrink-0">
-              {playerAvatar ? (
-                <img
-                  src={playerAvatar}
-                  alt={playerName}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span className="text-2xl">🎯</span>
-              )}
-            </div>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-coral transition-colors"
-            >
-              <Camera size={11} weight="bold" />
-              Change
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleAvatarChange}
-              className="hidden"
-            />
-          </div>
-
-          {/* Username */}
-          <div className="flex-1 min-w-0">
-            {isEditingName ? (
-              <div className="flex items-center gap-1.5">
-                <Input
-                  value={editNameValue}
-                  onChange={(e) => setEditNameValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveName();
-                    if (e.key === "Escape") cancelEditName();
-                  }}
-                  className="h-8 text-sm"
-                  maxLength={20}
-                  autoFocus
-                />
-                <button
-                  onClick={saveName}
-                  className="w-8 h-8 rounded-xl bg-sage/15 flex items-center justify-center hover:bg-sage/25 transition-colors flex-shrink-0"
-                >
-                  <Check size={14} weight="bold" className="text-sage" />
-                </button>
-                <button
-                  onClick={cancelEditName}
-                  className="w-8 h-8 rounded-xl bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-colors flex-shrink-0"
-                >
-                  <X size={14} weight="bold" className="text-muted-foreground" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-charcoal truncate">
-                  {playerName}
-                </span>
-                <button
-                  onClick={startEditName}
-                  className="w-6 h-6 rounded-lg bg-secondary/80 flex items-center justify-center hover:bg-secondary transition-colors flex-shrink-0"
-                >
-                  <PencilSimple size={12} weight="bold" className="text-muted-foreground" />
-                </button>
-              </div>
-            )}
-            <p className="text-[11px] text-muted-foreground mt-1">
-              Level {level} • {xp} XP
-            </p>
-          </div>
-        </div>
-      </motion.div>
-
       {/* Settings Panel (collapsible) */}
       {showSettings && (
         <motion.div
@@ -296,6 +209,91 @@ export default function ProfileTab() {
                 </p>
                 <p className="text-[10px] text-muted-foreground">
                   Source: Japanese (ja) → English (en)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Profile Editing ── */}
+          <div className="p-4 rounded-2xl bg-secondary/50 mb-3">
+            <div className="flex items-center gap-2 mb-3">
+              <User size={16} weight="fill" className="text-coral" />
+              <h4 className="text-sm font-semibold text-charcoal">Edit Profile</h4>
+            </div>
+            <div className="flex items-start gap-4">
+              {/* Avatar */}
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="w-14 h-14 rounded-full bg-coral/10 flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-coral/20">
+                  {playerAvatar ? (
+                    <img
+                      src={playerAvatar}
+                      alt={playerName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-2xl">🎯</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1 text-[10px] font-medium text-coral hover:text-coral/80 transition-colors"
+                >
+                  <Camera size={11} weight="bold" />
+                  Change
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  className="hidden"
+                />
+              </div>
+
+              {/* Username + Bio */}
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Display Name</p>
+                {isEditingName ? (
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      value={editNameValue}
+                      onChange={(e) => setEditNameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveName();
+                        if (e.key === "Escape") cancelEditName();
+                      }}
+                      className="h-8 text-sm"
+                      maxLength={20}
+                      autoFocus
+                    />
+                    <button
+                      onClick={saveName}
+                      className="w-8 h-8 rounded-xl bg-sage/15 flex items-center justify-center hover:bg-sage/25 transition-colors flex-shrink-0"
+                    >
+                      <Check size={14} weight="bold" className="text-sage" />
+                    </button>
+                    <button
+                      onClick={cancelEditName}
+                      className="w-8 h-8 rounded-xl bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-colors flex-shrink-0"
+                    >
+                      <X size={14} weight="bold" className="text-muted-foreground" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-charcoal truncate">
+                      {playerName}
+                    </span>
+                    <button
+                      onClick={startEditName}
+                      className="w-6 h-6 rounded-lg bg-secondary/80 flex items-center justify-center hover:bg-secondary transition-colors flex-shrink-0"
+                    >
+                      <PencilSimple size={12} weight="bold" className="text-muted-foreground" />
+                    </button>
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  Level {level} • {xp} XP • 🇯🇵 Japanese
                 </p>
               </div>
             </div>
