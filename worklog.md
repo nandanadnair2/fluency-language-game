@@ -510,3 +510,24 @@ Stage Summary:
 - Pipeline now has proper completion signaling: background → FLUENCY_TRANSCRIBED → content.js → FLUENCY_TRANSCRIPTION_DONE → audio-capture.js
 - Popup now shows detailed status at each stage of the pipeline
 - All extension files updated to v2.3.0
+
+---
+Task ID: 2-2
+Agent: main-developer
+Task: Fix Stage:idle issue — add active PING diagnostic system so popup can query content script
+
+Work Log:
+- Analyzed screenshot: popup shows Stage:idle with no audio indicator despite video running
+- Root cause: popup was purely passive (only received messages while open), missed all status messages from content script
+- Added PING/PONG diagnostic system: popup actively queries content script on every open
+- Updated background.js v3: routes PING to YouTube/Netflix tabs via chrome.tabs.query + chrome.tabs.sendMessage
+- Updated content.js v5: responds to FLUENCY_PING with full diagnostic state (video info, audio capture status, chunk counts, etc.)
+- Updated popup.js v7: sends PING immediately on open, interprets PONG response, shows detailed multiline diagnostics
+- Updated popup.html: diagnostics section now multiline (white-space: pre-line, max-height: 100px, scrollable)
+- Updated manifest.json v2.4.0: added "tabs" permission for chrome.tabs API
+- Lint clean
+
+Stage Summary:
+- Popup now actively checks content script status every time it opens
+- Diagnostics show: content script active?, video found/playing/muted?, captureStream available?, audio script injected?, audio capture status?
+- Clear guidance messages when issues detected (video paused, video muted, no YouTube tab, etc.)

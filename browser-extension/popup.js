@@ -1,10 +1,9 @@
 /**
- * Fluency Popup Script v6
+ * Fluency Popup Script v7
  * Connects to a self-hosted Fluency WebSocket service.
- * Shows detailed transcription pipeline status with diagnostics.
  *
- * v6: Added detailed stage-by-step status display, chunk counter,
- * last-error display, and "last update" freshness indicator.
+ * v7: Active diagnostic PING system — popup queries content script on every open.
+ * Shows clear pipeline status with troubleshooting guidance.
  */
 
 (function () {
@@ -22,8 +21,8 @@
   const audioDetail     = document.getElementById("audioDetail");
   const audioLabel      = document.getElementById("audioLabel");
   const audioIcon       = document.querySelector(".audio-icon");
-  const diagSection     = document.getElementById("diagnosticsSection");
   const diagContent     = document.getElementById("diagnosticsContent");
+  const diagSection     = document.getElementById("diagnosticsSection");
 
   // ---- State ----
   let socket = null;
@@ -33,11 +32,11 @@
   let lastSentText = "";
   let storagePollTimer = null;
   let intentionalClose = false;
+  let pingResponse = null;
 
-  // ---- Diagnostics State ----
-  let audioStage = "idle"; // idle, capturing, transcribing, error, no_data, muted
+  // ---- Diagnostics ----
+  let audioStage = "idle";
   let chunkCount = 0;
-  let transcriptionCount = 0;
   let lastError = "";
   let lastUpdateTime = 0;
 
@@ -69,7 +68,6 @@
   // ---- UI Helpers ----
   function setStatus(state, message) {
     statusDot.className = "status-dot";
-
     if (state === "connected") {
       statusDot.classList.add("connected");
       statusText.textContent = message || `Connected to room ${roomCode}`;
@@ -124,18 +122,18 @@
 
     switch (stage) {
       case "capturing":
-        audioLabel.textContent = "🎙️ Audio Capture Active";
-        audioDetail.textContent = detail || "Capturing audio for AI transcription…";
+        audioLabel.textContent = "🎙️ Audio Capture";
+        audioDetail.textContent = detail || "Capturing audio…";
         audioIcon.textContent = "🎙️";
         break;
       case "transcribing":
         audioLabel.textContent = "⚡ Transcribing…";
-        audioDetail.textContent = detail || "Sending audio to AI for speech recognition…";
+        audioDetail.textContent = detail || "Sending audio to AI…";
         audioIcon.textContent = "⚡";
         break;
       case "success":
         audioLabel.textContent = "✅ Speech Detected";
-        audioDetail.textContent = detail || "Translating recognized speech…";
+        audioDetail.textContent = detail || "Translating…";
         audioIcon.textContent = "✅";
         setTimeout(() => {
           if (audioStage === "success") {
@@ -146,53 +144,180 @@
         break;
       case "no_speech":
         audioLabel.textContent = "🔇 Listening…";
-        audioDetail.textContent = detail || "No speech detected yet — keep the video playing";
+        audioDetail.textContent = detail || "No speech detected yet";
         audioIcon.textContent = "🔇";
         break;
       case "no_data":
         audioLabel.textContent = "⚠️ No Audio Data";
-        audioDetail.textContent = detail || "Audio capture active but no data received. Is the video unmuted?";
+        audioDetail.textContent = detail || "Is the video unmuted?";
         audioIcon.textContent = "⚠️";
         break;
       case "muted":
         audioLabel.textContent = "🔇 Video Muted";
-        audioDetail.textContent = detail || "Please unmute the video for audio capture to work";
+        audioDetail.textContent = detail || "Unmute the video";
         audioIcon.textContent = "🔇";
         break;
       case "error":
-        audioLabel.textContent = "❌ Audio Error";
-        audioDetail.textContent = detail || "An error occurred during audio capture";
+        audioLabel.textContent = "❌ Error";
+        audioDetail.textContent = detail || "Audio capture error";
         audioIcon.textContent = "❌";
         break;
       default:
-        audioLabel.textContent = "🎙️ Audio Capture";
+        audioLabel.textContent = "🎙️ Audio";
         audioDetail.textContent = detail || "";
         audioIcon.textContent = "🎙️";
     }
   }
 
-  // ---- Diagnostics Panel ----
+  // ---- Diagnostics Display ----
   function updateDiagnostics() {
     if (!diagContent) return;
 
     const lines = [];
-    lines.push(`Stage: ${audioStage}`);
 
+    // Content script status
+    if (pingResponse) {
+      if (pingResponse.contentScriptActive) {
+        lines.push("✅ Content script: active");
+      } else {
+        lines.push("❌ " + (pingResponse.error || "Content script not active"));
+      }
+    } else {
+      lines.push("⏳ Checking content script…");
+      return; // Don't show other diagnostics until PING returns
+    }
+
+    // Video info
+    if (pingResponse.video && pingResponse.video.found) {
+      const v = pingResponse.video;
+      const state = v.playing ? "▶️ playing" : "⏸️ paused";
+      const mute = v.muted ? " 🔇 muted" : " 🔊 audio on";
+      lines.push(`🎬 Video: ${state}${mute} (${v.width}×${v.height})`);
+      if (v.hasCaptureStream) {
+        lines.push("📡 captureStream: available");
+      } else {
+        lines.push("⚠️ captureStream: NOT available");
+      }
+    } else if (pingResponse.contentScriptActive) {
+      lines.push("❌ No video element found on page");
+    }
+
+    // Audio script injection
+    if (pingResponse.audioScriptInjected) {
+      lines.push("📡 Audio script: injected");
+    } else if (pingResponse.contentScriptActive) {
+      lines.push("❌ Audio script: NOT injected");
+    }
+
+    // Audio capture status
+    if (pingResponse.audioCaptureStatus) {
+      const st = pingResponse.audioCaptureStatus;
+      lines.push(`🎙️ Audio: ${st.status}${st.error ? " (" + st.error + ")" : ""}`);
+    } else if (pingResponse.contentScriptActive) {
+      lines.push("⏳ Audio capture: not started");
+    }
+
+    // Chunk stats
     if (chunkCount > 0) {
-      lines.push(`Chunks captured: ${chunkCount}`);
-    }
-    if (transcriptionCount > 0) {
-      lines.push(`Transcriptions: ${transcriptionCount}`);
-    }
-    if (lastError) {
-      lines.push(`Last error: ${lastError}`);
-    }
-    if (lastUpdateTime > 0) {
-      const secondsAgo = Math.round((Date.now() - lastUpdateTime) / 1000);
-      lines.push(`Last update: ${secondsAgo}s ago`);
+      lines.push(`📦 Chunks: ${chunkCount}`);
     }
 
-    diagContent.textContent = lines.join(" | ") || "No activity yet";
+    // Last error
+    if (lastError) {
+      lines.push(`❌ Error: ${lastError}`);
+    }
+
+    diagContent.textContent = lines.join("\n");
+  }
+
+  // ── PING Content Script ──────────────────────────────────────
+  function pingContentScript() {
+    // Clear previous diagnostics while we wait
+    diagContent.textContent = "⏳ Checking YouTube/Netflix tab…";
+    audioIndicator.classList.remove("visible");
+
+    chrome.runtime.sendMessage({ type: "FLUENCY_PING" }, (response) => {
+      if (chrome.runtime.lastError) {
+        pingResponse = { contentScriptActive: false, error: "Background not responding: " + chrome.runtime.lastError.message };
+        updateDiagnostics();
+        return;
+      }
+      if (!response) {
+        pingResponse = { contentScriptActive: false, error: "No response from background" };
+        updateDiagnostics();
+        return;
+      }
+
+      pingResponse = response;
+      console.log("[Fluency] PONG received:", JSON.stringify(response).slice(0, 300));
+
+      // Parse the pong response and update UI
+      if (!response.contentScriptActive) {
+        // Content script is not running on any YouTube/Netflix tab
+        updateAudioStage("idle");
+        lastError = response.error || "Content script not active";
+        updateDiagnostics();
+
+        // Show guidance in subtitle area
+        subtitlePreview.textContent = "Open a YouTube or Netflix video page, then reload this popup.";
+        subtitlePreview.classList.add("empty");
+        return;
+      }
+
+      // Content script is active — check audio capture state
+      const audioStatus = response.audioCaptureStatus;
+      if (audioStatus) {
+        const status = audioStatus.status;
+        if (status === "active" || status === "active_data") {
+          chunkCount = audioStatus.chunksProduced || chunkCount;
+          updateAudioStage("capturing", `Audio active — ${chunkCount} chunk(s) captured`);
+        } else if (status === "no_data") {
+          updateAudioStage("no_data", `No audio data after ${audioStatus.elapsed || "?"}s — unmute the video`);
+          lastError = "No audio data received";
+        } else if (status === "muted") {
+          updateAudioStage("muted", audioStatus.error || "Video is muted");
+        } else if (status === "error") {
+          lastError = audioStatus.error || "Audio capture error";
+          updateAudioStage("error", lastError);
+        } else if (status === "stopped") {
+          updateAudioStage("idle");
+        }
+      } else {
+        // Audio capture status not received — audio-capture.js may not have started yet
+        const video = response.video;
+        if (video && video.found) {
+          if (!video.playing) {
+            updateAudioStage("idle");
+            diagContent.textContent = "✅ Content script active\n🎬 Video found but paused\n⏳ Audio capture will start when video plays";
+            subtitlePreview.textContent = "Video is paused. Press play to start audio capture.";
+            subtitlePreview.classList.add("empty");
+            return;
+          }
+          if (video.muted || video.volume === 0) {
+            updateAudioStage("muted", "Video is muted — unmute for audio capture");
+          } else if (!video.hasCaptureStream) {
+            updateAudioStage("error", "captureStream() not supported on this video");
+            lastError = "captureStream not available";
+          } else {
+            // Video is playing, unmuted, has captureStream, but audio capture hasn't started
+            // audio-capture.js might still be in its 4s initial delay
+            updateAudioStage("capturing", "Waiting for audio capture to start…");
+            // Retry ping in a few seconds
+            setTimeout(pingContentScript, 5000);
+          }
+        } else {
+          updateAudioStage("idle");
+          diagContent.textContent = "✅ Content script active\n❌ No video element found on page\n🔍 Try navigating to a video";
+        }
+      }
+
+      updateDiagnostics();
+
+      // Show any existing subtitle
+      if (response.lastSubtitleText) {
+        updateSubtitlePreview(response.lastSubtitleText);
+      }
+    });
   }
 
   // ---- Socket.io Connection ----
@@ -221,9 +346,7 @@
     setStatus("connecting", "Connecting to server…");
 
     const socketUrl = buildSocketUrl(serverUrl);
-
     console.log(`[Fluency] Connecting to: ${socketUrl}`);
-    console.log(`[Fluency] Room code: ${roomCode}`);
 
     try {
       socket = io(socketUrl, {
@@ -248,13 +371,10 @@
         clearTimeout(connectTimeout);
         isConnected = true;
         isConnecting = false;
-        console.log(`[Fluency] Socket connected: ${socket.id}`);
         setStatus("connected");
-
         socket.emit("join-room", roomCode, (response) => {
           console.log(`[Fluency] Joined room ${roomCode}:`, response);
         });
-
         startStoragePolling();
       });
 
@@ -263,8 +383,6 @@
         isConnected = false;
         isConnecting = false;
         stopStoragePolling();
-        console.warn(`[Fluency] Disconnected: ${reason}`);
-
         if (!intentionalClose) {
           setStatus("error", `Disconnected (${reason}) — retrying…`);
         } else {
@@ -275,7 +393,6 @@
       socket.on("connect_error", (err) => {
         clearTimeout(connectTimeout);
         isConnecting = false;
-        console.error(`[Fluency] Connection error: ${err.message}`);
         setStatus("error", `Connection failed — ${err.message}`);
         cleanup();
       });
@@ -284,18 +401,9 @@
         console.log("[Fluency] Subtitle echoed:", data.text?.slice(0, 40));
       });
 
-      socket.on("member-joined", (data) => {
-        console.log("[Fluency] Member joined:", data);
-      });
-
-      socket.on("member-left", (data) => {
-        console.log("[Fluency] Member left:", data);
-      });
-
     } catch (err) {
       setStatus("error", "Failed to create connection");
       isConnecting = false;
-      console.error("[Fluency] Socket creation error:", err);
     }
   }
 
@@ -303,17 +411,13 @@
     intentionalClose = true;
     isConnecting = false;
     stopStoragePolling();
-
     if (socket) {
       try {
-        if (isConnected && roomCode) {
-          socket.emit("leave-room", roomCode);
-        }
+        if (isConnected && roomCode) socket.emit("leave-room", roomCode);
         socket.disconnect();
       } catch { /* ignore */ }
       socket = null;
     }
-
     isConnected = false;
     lastSentText = "";
     setStatus("disconnected");
@@ -329,7 +433,7 @@
   // ---- Storage Polling ----
   function startStoragePolling() {
     stopStoragePolling();
-    storagePollTimer = setInterval(pollStorage, 300);
+    storagePollTimer = setInterval(pollStorage, 500);
     pollStorage();
   }
 
@@ -342,43 +446,17 @@
 
   function pollStorage() {
     chrome.storage.local.get(
-      [
-        "fluency_lastSubtitle",
-        "fluency_lastTimestamp",
-        "fluency_audioMode",
-        "fluency_audioStatus",
-        "fluency_audioError",
-        "fluency_audioChunksProduced",
-        "fluency_audioElapsed",
-        "fluency_lastError",
-      ],
+      ["fluency_lastSubtitle", "fluency_lastTimestamp", "fluency_audioMode", "fluency_audioStatus"],
       (result) => {
-        // Update subtitle preview
         const text = result.fluency_lastSubtitle || "";
         updateSubtitlePreview(text);
         lastUpdateTime = result.fluency_lastTimestamp || 0;
 
-        // Update diagnostics from storage
-        if (result.fluency_audioChunksProduced) {
-          chunkCount = result.fluency_audioChunksProduced;
-        }
-        if (result.fluency_lastError) {
-          lastError = result.fluency_lastError;
-        }
-        updateDiagnostics();
-
-        // Sync subtitle to room via socket
         if (isConnected && text && text !== lastSentText) {
           lastSentText = text;
           try {
-            socket.emit("subtitle", {
-              code: roomCode,
-              text: text,
-            });
-            console.log(`[Fluency] Sent subtitle: "${text.slice(0, 50)}"`);
-          } catch (err) {
-            console.error("[Fluency] Failed to send subtitle:", err);
-          }
+            socket.emit("subtitle", { code: roomCode, text: text });
+          } catch (err) { /* ignore */ }
         }
       }
     );
@@ -386,16 +464,9 @@
 
   // ---- Event Listeners ----
   connectBtn.addEventListener("click", () => {
-    if (isConnected) {
-      disconnect();
-    } else if (isConnecting) {
-      intentionalClose = true;
-      isConnecting = false;
-      cleanup();
-      setStatus("disconnected");
-    } else {
-      connect();
-    }
+    if (isConnected) disconnect();
+    else if (isConnecting) { intentionalClose = true; isConnecting = false; cleanup(); setStatus("disconnected"); }
+    else connect();
   });
 
   roomInput.addEventListener("keydown", (e) => {
@@ -403,67 +474,43 @@
   });
 
   // Restore saved values on popup open
-  chrome.storage.local.get(
-    ["fluency_roomCode", "fluency_serverUrl", "fluency_lastSubtitle", "fluency_lastTimestamp", "fluency_audioMode", "fluency_audioStatus"],
-    (result) => {
-      if (result.fluency_roomCode) {
-        roomInput.value = result.fluency_roomCode;
-      }
-      if (result.fluency_serverUrl) {
-        serverUrlInput.value = result.fluency_serverUrl;
-      }
-      updateSubtitlePreview(result.fluency_lastSubtitle || "");
-      lastUpdateTime = result.fluency_lastTimestamp || 0;
+  chrome.storage.local.get(["fluency_roomCode", "fluency_serverUrl"], (result) => {
+    if (result.fluency_roomCode) roomInput.value = result.fluency_roomCode;
+    if (result.fluency_serverUrl) serverUrlInput.value = result.fluency_serverUrl;
+  });
 
-      // Restore audio mode from storage
-      if (result.fluency_audioMode) {
-        const status = result.fluency_audioStatus || "active";
-        updateAudioStage("capturing", "Audio capture active on video page");
-      }
-      updateDiagnostics();
-    }
-  );
-
-  // Save on change
   roomInput.addEventListener("input", () => {
     chrome.storage.local.set({ fluency_roomCode: roomInput.value });
   });
-
   serverUrlInput.addEventListener("input", () => {
     chrome.storage.local.set({ fluency_serverUrl: serverUrlInput.value });
   });
 
-  // ---- Message Handlers ----
+  // Listen for messages from background/content
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Audio capture status from content script
     if (message.type === "FLUENCY_AUDIO_STATUS") {
       const status = message.status;
       if (status === "active" || status === "active_data") {
-        if (status === "active_data" && message.chunksProduced) {
-          chunkCount = message.chunksProduced;
-          updateAudioStage("capturing", `Capturing audio — ${chunkCount} chunk(s) recorded`);
-        } else {
-          updateAudioStage("capturing", "Audio stream ready — waiting for first chunk…");
-        }
+        chunkCount = message.chunksProduced || chunkCount;
+        updateAudioStage("capturing", `Capturing — ${chunkCount} chunk(s)`);
       } else if (status === "no_data") {
-        updateAudioStage("no_data", `No audio data after ${message.elapsed || "?"}s — is the video unmuted?`);
+        updateAudioStage("no_data", `No audio after ${message.elapsed || "?"}s — unmute video`);
       } else if (status === "muted") {
-        updateAudioStage("muted", message.error || "Video appears to be muted");
+        updateAudioStage("muted", message.error || "Video muted");
       } else if (status === "stopped") {
         updateAudioStage("idle");
       } else if (status === "error") {
-        lastError = message.error || "Audio capture error";
-        updateAudioStage("error", message.error || "Audio capture error");
+        lastError = message.error || "Audio error";
+        updateAudioStage("error", lastError);
       }
     }
 
-    // Transcription result from background
     if (message.type === "FLUENCY_TRANSCRIBED") {
       if (message.error) {
         lastError = message.error;
         updateAudioStage("error", "Transcription: " + message.error);
       } else if (message.text) {
-        transcriptionCount++;
+        chunkCount++;
         updateAudioStage("success", `Recognized: "${message.text.slice(0, 40)}…"`);
         updateSubtitlePreview(message.text);
       } else if (message.info) {
@@ -471,6 +518,10 @@
       }
     }
   });
+
+  // ---- On Popup Open: Ping content script immediately ----
+  // This is the KEY fix — actively query instead of passively waiting
+  pingContentScript();
 
   // Cleanup on popup close
   window.addEventListener("unload", () => {

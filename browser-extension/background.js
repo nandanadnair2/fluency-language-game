@@ -1,17 +1,73 @@
 /**
- * Fluency Background Service Worker v2
- * Handles audio transcription by calling the Fluency API
- * on behalf of content scripts (avoids mixed-content HTTPS→HTTP blocks).
+ * Fluency Background Service Worker v3
+ * Handles audio transcription by calling the Fluency API.
+ * Routes PING messages from popup to content scripts on YouTube/Netflix tabs.
  *
- * v2: Better error handling, sends FLUENCY_TRANSCRIBED with detailed status,
- * handles edge cases like empty responses.
+ * v3: Added tab message routing for PING/PONG diagnostic system.
  */
 
 let transcriptionPending = false;
 let transcriptionCount = 0;
 
-// ── Listen for messages from content scripts ──────────────────────
+// ── Listen for messages from content scripts and popup ──────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+
+  // ── PING from popup → forward to all matching tabs ──
+  if (message.type === "FLUENCY_PING") {
+    // Query all tabs and send PING to YouTube/Netflix tabs
+    chrome.tabs.query({ url: ["*://*.youtube.com/*", "*://*.netflix.com/*"] }, (tabs) => {
+      if (!tabs || tabs.length === 0) {
+        // No YouTube/Netflix tab open
+        sendResponse({
+          type: "FLUENCY_PONG",
+          contentScriptActive: false,
+          error: "No YouTube or Netflix tab found — open a video page first",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      let responded = false;
+      const timeout = setTimeout(() => {
+        if (!responded) {
+          responded = true;
+          sendResponse({
+            type: "FLUENCY_PONG",
+            contentScriptActive: false,
+            error: "Content script not responding — try refreshing the video page",
+            tabFound: true,
+            tabUrl: tabs[0].url,
+            timestamp: Date.now(),
+          });
+        }
+      }, 3000);
+
+      // Send PING to first matching tab
+      chrome.tabs.sendMessage(tabs[0].id, { type: "FLUENCY_PING" }, (response) => {
+        clearTimeout(timeout);
+        if (chrome.runtime.lastError) {
+          // Content script not injected in this tab
+          if (!responded) {
+            responded = true;
+            sendResponse({
+              type: "FLUENCY_PONG",
+              contentScriptActive: false,
+              error: "Content script not loaded — refresh the video page with extension enabled",
+              tabFound: true,
+              tabUrl: tabs[0].url,
+              timestamp: Date.now(),
+            });
+          }
+          return;
+        }
+        if (response && !responded) {
+          responded = true;
+          sendResponse(response);
+        }
+      });
+    });
+    return true; // async sendResponse
+  }
 
   // ── Audio chunk → transcribe via API ──
   if (message.type === "FLUENCY_AUDIO_CHUNK_BG") {
@@ -22,20 +78,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     transcriptionPending = true;
     transcriptionCount++;
-
     const chunkId = message.chunkId || transcriptionCount;
-    console.log(`[Fluency BG] Processing chunk #${chunkId} (${(message.data || "").length} chars base64)`);
 
-    // Get server URL from storage
+    console.log(`[Fluency BG] Chunk #${chunkId} (${(message.data || "").length} chars)`);
+
     chrome.storage.local.get(["fluency_serverUrl"], (result) => {
-      const serverUrl = (result.fluency_serverUrl || "http://localhost:3000")
-        .trim()
-        .replace(/\/+$/, "");
+      const serverUrl = (result.fluency_serverUrl || "http://localhost:3000").trim().replace(/\/+$/, "");
 
-      const apiUrl = `${serverUrl}/api/transcribe`;
-      console.log(`[Fluency BG] Calling: ${apiUrl}`);
-
-      fetch(apiUrl, {
+      fetch(`${serverUrl}/api/transcribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -44,9 +94,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }),
       })
         .then((res) => {
-          if (!res.ok) {
-            throw new Error(`API returned ${res.status}: ${res.statusText}`);
-          }
+          if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
           return res.json();
         })
         .then((data) => {
@@ -64,27 +112,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           if (data.text && data.text.trim().length > 0) {
             const text = data.text.trim();
-
-            // Store in chrome.storage for popup to pick up
             chrome.storage.local.set({
               fluency_lastSubtitle: text,
               fluency_lastTimestamp: Date.now(),
               fluency_audioMode: true,
             });
-
-            // Notify all listeners (popup, content script)
             chrome.runtime.sendMessage({
               type: "FLUENCY_TRANSCRIBED",
               text: text,
               success: true,
-            }).catch(() => {
-              // popup might be closed — that's ok
-            });
-
-            console.log(`[Fluency BG] Transcribed #${chunkId}: "${text.slice(0, 60)}"`);
+            }).catch(() => {});
+            console.log(`[Fluency BG] OK #${chunkId}: "${text.slice(0, 60)}"`);
           } else {
-            // No speech detected — notify but don't error
-            console.log(`[Fluency BG] No speech in chunk #${chunkId}`);
+            console.log(`[Fluency BG] Empty #${chunkId}`);
             chrome.runtime.sendMessage({
               type: "FLUENCY_TRANSCRIBED",
               text: "",
@@ -93,17 +133,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         })
         .catch((err) => {
-          console.error("[Fluency BG] Transcription fetch failed:", err.message);
+          console.error("[Fluency BG] Fetch failed:", err.message);
           transcriptionPending = false;
-
-          // Notify about error
           chrome.runtime.sendMessage({
             type: "FLUENCY_TRANSCRIBED",
             text: "",
-            error: "API call failed: " + err.message,
+            error: "API failed: " + err.message,
           }).catch(() => {});
-
-          // Also store the error info so popup can show it
           chrome.storage.local.set({
             fluency_lastError: "Transcription failed: " + err.message,
             fluency_lastTimestamp: Date.now(),
@@ -111,14 +147,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
     });
 
-    // Respond immediately to unblock content script
     sendResponse({ status: "processing" });
-    return true; // async response
+    return true;
   }
 
   // ── Forward audio status from content script to popup ──
   if (message.type === "FLUENCY_AUDIO_STATUS") {
-    // Store the status for popup to read on open
     chrome.storage.local.set({
       fluency_audioStatus: message.status,
       fluency_audioError: message.error || null,
@@ -126,17 +160,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       fluency_audioChunksProduced: message.chunksProduced || 0,
       fluency_audioElapsed: message.elapsed || null,
     });
-
-    // Also forward to popup if it's open
-    chrome.runtime.sendMessage({
-      type: "FLUENCY_AUDIO_STATUS",
-      status: message.status,
-      error: message.error,
-      codec: message.codec,
-      audioTracks: message.audioTracks,
-      chunksProduced: message.chunksProduced,
-      elapsed: message.elapsed,
-    }).catch(() => {});
+    chrome.runtime.sendMessage(message).catch(() => {});
     return false;
   }
 });
