@@ -15,6 +15,8 @@ export interface Quest {
 
 export interface GameState {
   // Player
+  playerName: string;
+  playerAvatar: string;
   xp: number;
   level: number;
   totalWordsLearned: number;
@@ -32,6 +34,8 @@ export interface GameState {
 
   // Actions
   addXP: (amount: number) => void;
+  setPlayerName: (name: string) => void;
+  setPlayerAvatar: (avatar: string) => void;
   scanWord: () => void;
   practiceToday: () => void;
   completeQuest: (questId: string) => void;
@@ -100,6 +104,8 @@ const XP_PER_LEVEL = 100;
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
+      playerName: "Learner",
+      playerAvatar: "",
       xp: 0,
       level: 1,
       totalWordsLearned: 0,
@@ -110,6 +116,14 @@ export const useGameStore = create<GameState>()(
       streakHistory: [],
       quests: generateDailyQuests(),
       lastQuestResetDate: null,
+
+      setPlayerName: (name: string) => {
+        set({ playerName: name });
+      },
+
+      setPlayerAvatar: (avatar: string) => {
+        set({ playerAvatar: avatar });
+      },
 
       addXP: (amount: number) => {
         const state = get();
@@ -259,6 +273,8 @@ export const useGameStore = create<GameState>()(
 
       resetForTesting: () => {
         set({
+          playerName: "Learner",
+          playerAvatar: "",
           xp: 0,
           level: 1,
           totalWordsLearned: 0,

@@ -36,10 +36,10 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: "assistant",
-          content: `You are an expert language translator. You will receive a text (likely in Japanese or another language). Translate it to ${targetLanguage} and provide romanization. Respond ONLY with valid JSON, no markdown code blocks. Fields:
+          content: `You are an expert language translator. You will receive a text in any language. Translate it to ${targetLanguage} and provide romanization. If the text is already in ${targetLanguage}, translate it to Japanese instead (bidirectional). Respond ONLY with valid JSON, no markdown code blocks. Fields:
 - "original": the exact original text as provided
-- "directTranslation": the ${targetLanguage} translation
-- "romanized": phonetic romanization with hyphens between syllables (e.g. "kon-nee-chee-WAH"). If already in Latin script, repeat the original.
+- "directTranslation": the translation in the target language
+- "romanized": phonetic romanization with hyphens between syllables (e.g. "kon-nee-chee-WAH"). For English text, provide Japanese pronunciation guide. For Japanese text, provide romaji.
 - "sourceLanguage": detected ISO language code (ja, ko, zh, en, etc.)
 - "targetLanguage": "${targetLanguage}"
 

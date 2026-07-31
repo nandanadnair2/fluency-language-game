@@ -398,3 +398,25 @@ Stage Summary:
 - AnimatePresence exit animations now work properly
 - Pill mode previews both original and translation text
 - All features verified with Agent Browser + VLM analysis
+
+---
+Task ID: feature-profile-leaderboard
+Agent: main-developer
+Task: Add user profile settings (avatar + username) and leaderboard
+
+Work Log:
+- Added `playerName` (default "Learner"), `playerAvatar` (default ""), `setPlayerName`, `setPlayerAvatar` to Zustand game state with persist
+- Created `/home/z/my-project/src/components/Leaderboard.tsx`: ranked list of 8 players (real player + 7 simulated Japanese-themed names), seeded random XP relative to player, gold/silver/bronze icons for top 3, coral highlight + "You" badge for player row, stagger framer-motion animations, weekly XP gains
+- Updated `/home/z/my-project/src/components/ProfileTab.tsx`:
+  - Profile header now shows playerAvatar (uploaded image) or User icon fallback, and playerName from store instead of hardcoded "Fluency Learner"
+  - Added new "Profile" section card above Settings with: 48px circular avatar display (🎯 default or uploaded image), "Change" button with Camera icon triggering hidden file input (accept image/*), username display with PencilSimple edit button, inline edit mode with Input + Check/X buttons, Enter/Escape keyboard shortcuts
+  - Imported Leaderboard component and placed it below QuestBoard
+  - Removed unused imports (ArrowUp, ArrowDown, JapaneseFlag)
+- Updated `/home/z/my-project/src/app/page.tsx` header: shows 24px circular player avatar (or 🎯 emoji) next to XP/level stats
+- All lint checks pass clean
+
+Stage Summary:
+- User profile system: avatar upload (base64 dataURL via FileReader) + username editing, both persisted to localStorage via Zustand
+- Leaderboard: 8-player ranked list with real player inserted at realistic position, 7 simulated Japanese-themed learners, weekly XP badges, gold/silver/bronze icons, staggered row animations
+- Header avatar: 24px circle in top bar shows player avatar across all tabs
+- Modified files: src/lib/game-state.ts, src/components/ProfileTab.tsx, src/components/Leaderboard.tsx (new), src/app/page.tsx

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   SpeakerHigh,
@@ -18,6 +18,38 @@ interface DynamicIslandProps {
   onDismiss?: () => void;
   onSave?: (word: TranslationResponse) => void;
 }
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  ja: "Japanese",
+  en: "English",
+  ko: "Korean",
+  zh: "Chinese",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  pt: "Portuguese",
+  it: "Italian",
+  ru: "Russian",
+  ar: "Arabic",
+  hi: "Hindi",
+  auto: "Detected",
+};
+
+const LANGUAGE_FLAGS: Record<string, string> = {
+  ja: "🇯🇵",
+  en: "🇺🇸",
+  ko: "🇰🇷",
+  zh: "🇨🇳",
+  es: "🇪🇸",
+  fr: "🇫🇷",
+  de: "🇩🇪",
+  pt: "🇧🇷",
+  it: "🇮🇹",
+  ru: "🇷🇺",
+  ar: "🇸🇦",
+  hi: "🇮🇳",
+  auto: "🌐",
+};
 
 export default function DynamicIsland({
   subtitle,
@@ -41,6 +73,31 @@ export default function DynamicIsland({
     },
     [onDismiss]
   );
+
+  // Dynamic labels based on detected language
+  const labels = useMemo(() => {
+    const src = subtitle?.sourceLanguage || "auto";
+    const tgt = subtitle?.targetLanguage || "en";
+
+    const srcName = LANGUAGE_NAMES[src] || src.toUpperCase();
+    const tgtName = LANGUAGE_NAMES[tgt] || tgt.toUpperCase();
+    const srcFlag = LANGUAGE_FLAGS[src] || "🌐";
+    const tgtFlag = LANGUAGE_FLAGS[tgt] || "🌐";
+
+    // If source is English, translation goes TO Japanese etc.
+    // Label the translation section with the TARGET language name
+    const isSourceEnglish = src === "en";
+
+    return {
+      originalLabel: `${srcFlag} Original Text (${srcName})`,
+      translationLabel: `${tgtFlag} ${tgtName} Translation`,
+      pronunciationLabel: isSourceEnglish
+        ? "🔤 Writing Practice"
+        : "🔊 Pronunciation",
+      pronunciationText: isSourceEnglish ? subtitle?.romanized : subtitle?.romanized,
+      langPair: `${src.toUpperCase()} → ${tgt.toUpperCase()}`,
+    };
+  }, [subtitle]);
 
   return (
     <AnimatePresence mode="wait">
@@ -141,18 +198,18 @@ export default function DynamicIsland({
                   {/* Original */}
                   <div className="p-4 rounded-2xl bg-secondary/50">
                     <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      📝 Original Text
+                      📝 {labels.originalLabel}
                     </span>
                     <p className="font-serif text-xl font-bold text-charcoal mt-1.5 break-words leading-relaxed">
                       {subtitle.original}
                     </p>
                   </div>
 
-                  {/* English Translation — MOST PROMINENT */}
+                  {/* Translation — MOST PROMINENT */}
                   <div className="p-5 rounded-2xl bg-coral/10 border-2 border-coral/30 shadow-sm">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[10px] font-bold text-coral uppercase tracking-widest">
-                        🗣️ English Translation
+                        🗣️ {labels.translationLabel}
                       </span>
                       <button
                         onClick={() => handleCopy(subtitle.directTranslation)}
@@ -170,7 +227,7 @@ export default function DynamicIsland({
                   {/* Pronunciation / Romanized */}
                   <div className="p-4 rounded-2xl bg-butter/8 border border-butter/25">
                     <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      🔊 Pronunciation
+                      {labels.pronunciationLabel}
                     </span>
                     <p className="text-lg font-medium text-sage mt-1.5 break-words leading-relaxed italic">
                       {subtitle.romanized}
@@ -180,8 +237,7 @@ export default function DynamicIsland({
                   {/* Language info */}
                   <div className="flex items-center justify-center gap-2 py-1">
                     <span className="text-[10px] text-muted-foreground">
-                      {subtitle.sourceLanguage?.toUpperCase() || "JA"} →{" "}
-                      {subtitle.targetLanguage?.toUpperCase() || "EN"}
+                      {labels.langPair}
                     </span>
                   </div>
 

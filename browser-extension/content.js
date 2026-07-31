@@ -1,8 +1,8 @@
 /**
- * Fluency Content Script
- * Detects subtitle/caption text from YouTube and Netflix using MutationObserver.
- * Only extracts ACTUAL subtitle text — filters out page metadata, buttons, links, etc.
- * Stores detected subtitles in chrome.storage.local for the popup to read.
+ * Fluency Content Script v2
+ * Detects subtitle/caption text from YouTube and Netflix.
+ * Also supports videos WITHOUT closed captions by periodically
+ * capturing video frames and sending them to the VLM API for text extraction.
  */
 
 (function () {
@@ -20,125 +20,81 @@
 
   let lastSubtitleText = "";
   let debounceTimer = null;
+  let frameCaptureInterval = null;
+  let frameProcessing = false;
+  let ccDetected = false;
+  let noCCTimer = null;
 
   // ---------------------------------------------------------------
   // Subtitle selectors — ONLY target the actual subtitle containers
   // ---------------------------------------------------------------
   function getSubtitleSelectors() {
     if (isYouTube) {
-      // YouTube closed captions live inside .ytp-caption-window-container
-      // The actual text segments are .ytp-caption-segment
       return [
-        ".ytp-caption-segment",            // Standard CC segments
-        ".caption-visual-line",             // Newer YouTube player
-        ".html5-video-player .caption-text", // Alternative CC class
+        ".ytp-caption-segment",
+        ".caption-visual-line",
+        ".html5-video-player .caption-text",
       ];
     }
     if (isNetflix) {
-      // Netflix timed text is in specific containers
       return [
-        ".player-timedtext-text",          // Primary Netflix subtitles
-        ".timed-text-container .timed-text", // Alternative
-        "[class*='timedtext'][class*='text']", // Regex fallback
+        ".player-timedtext-text",
+        ".timed-text-container .timed-text",
+        "[class*='timedtext'][class*='text']",
       ];
     }
     return [];
   }
 
-  /**
-   * Check if an element is a genuine subtitle element (not a button, link, etc.)
-   */
   function isSubtitleElement(el) {
     if (!el) return false;
-
-    // Must NOT be inside a button, link, input, or form
     const excludedParents = ["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA", "FORM", "LABEL"];
     let current = el.parentElement;
     while (current && current !== document.body) {
       if (excludedParents.includes(current.tagName)) return false;
       current = current.parentElement;
     }
-
-    // Must be visible and have reasonable dimensions
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return false;
-
-    // Should not be tiny (likely an icon or badge)
     if (rect.width < 50 || rect.height < 10) return false;
-
     return true;
   }
 
-  /**
-   * Check if text looks like an actual subtitle line
-   * (not a page title, button label, URL, or metadata)
-   */
   function looksLikeSubtitle(text) {
     if (!text || text.length === 0) return false;
-
-    // Filter out extremely long text (subtitles are typically short)
     if (text.length > 200) return false;
-
-    // Filter out text with URLs
     if (/https?:\/\//.test(text)) return false;
 
-    // Filter out text that looks like UI metadata
     const metadataPatterns = [
       /\d{1,3}(,\d{3})*(,\d{3})+\s*(views|subscribers)/i,
-      /\d+:\d{2}/,              // Timestamps like 5:40
-      /views?/i,
-      /subscribe/i,
-      /share/i,
-      /save/i,
-      /copy link/i,
-      /sign in/i,
-      /sign out/i,
-      /settings/i,
-      /shopping/i,
-      /info\b/i,
-      /tap to unmute/i,
-      /playback doesn/i,
-      /restarting your device/i,
-      /pull up for/i,
-      /cancel$/i,
-      /confirm$/i,
-      /next$/i,
-      /live$/i,
-      /upcoming$/i,
-      /search/i,
-      /recommendation/i,
-      /watch history/i,
-      /recapping/i,
-      /years ago/i,
+      /\d+:\d{2}/,
+      /views?/i, /subscribe/i, /share/i, /save/i, /copy link/i,
+      /sign in/i, /sign out/i, /settings/i, /shopping/i,
+      /info\b/i, /tap to unmute/i, /playback doesn/i,
+      /restarting your device/i, /pull up for/i,
+      /cancel$/i, /confirm$/i, /next$/i,
+      /live$/i, /upcoming$/i, /search/i,
+      /recommendation/i, /watch history/i,
+      /recapping/i, /years ago/i,
     ];
 
     for (const pattern of metadataPatterns) {
       if (pattern.test(text)) return false;
     }
-
-    // Filter out very short text (single characters, emojis only)
     if (text.length < 2) return false;
-
-    // Should contain at least one letter or CJK character
     if (!/[a-zA-Z\u3000-\u9fff\u3040-\u309f\u30a0-\u30ff]/.test(text)) return false;
-
     return true;
   }
 
-  /**
-   * Extract current subtitle text from the DOM.
-   * Returns empty string if no valid subtitle found.
-   */
   function extractSubtitleText() {
     const selectors = getSubtitleSelectors();
-
     for (const selector of selectors) {
       const elements = document.querySelectorAll(selector);
       for (const el of elements) {
         if (!isSubtitleElement(el)) continue;
-
         const text = (el.textContent || "").trim();
         if (text && looksLikeSubtitle(text)) {
+          ccDetected = true;
           return text;
         }
       }
@@ -146,12 +102,8 @@
     return "";
   }
 
-  /**
-   * Save the subtitle text to chrome.storage.local.
-   */
   function onSubtitleDetected(text) {
     if (!text || text === lastSubtitleText) return;
-
     lastSubtitleText = text;
 
     chrome.storage.local.set(
@@ -165,32 +117,127 @@
     );
   }
 
-  /**
-   * Debounced handler – waits 250ms after DOM changes before reading.
-   */
   function handleMutation() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       const text = extractSubtitleText();
-      onSubtitleDetected(text);
+      if (text) {
+        onSubtitleDetected(text);
+        // Reset the no-CC timer when we find CC text
+        clearTimeout(noCCTimer);
+        noCCTimer = setTimeout(() => {
+          if (!ccDetected) startFrameCapture();
+        }, 15000);
+      }
     }, 250);
   }
 
   // ---------------------------------------------------------------
-  // Poll periodically as a fallback (some players update attributes)
+  // Frame capture for videos WITHOUT closed captions
+  // Captures video frames and sends to VLM for text extraction
+  // ---------------------------------------------------------------
+  function getVideoElement() {
+    const videos = document.querySelectorAll("video");
+    for (const v of videos) {
+      if (v.readyState >= 2 && v.videoWidth > 200) return v;
+    }
+    return videos[0] || null;
+  }
+
+  function captureFrame(video) {
+    if (!video || video.readyState < 2 || frameProcessing) return;
+
+    try {
+      const canvas = document.createElement("canvas");
+      // Downscale to reduce size — 640px wide is enough for text extraction
+      const scale = Math.min(640 / video.videoWidth, 1);
+      canvas.width = Math.floor(video.videoWidth * scale);
+      canvas.height = Math.floor(video.videoHeight * scale);
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+
+      processFrame(dataUrl);
+    } catch (err) {
+      // Canvas tainted or other error — silently ignore
+    }
+  }
+
+  function processFrame(imageDataUrl) {
+    if (frameProcessing) return;
+    frameProcessing = true;
+
+    // Send to Fluency server for VLM text extraction
+    // The server URL is stored in chrome.storage
+    chrome.storage.local.get(["fluency_serverUrl"], (result) => {
+      const serverUrl = result.fluency_serverUrl || "http://localhost:3000";
+      const baseUrl = serverUrl.trim().replace(/\/+$/, "");
+
+      fetch(`${baseUrl}/api/extract-text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageData: imageDataUrl }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.primaryText && data.texts && data.texts.length > 0) {
+            const combined = data.texts.filter(t => t.length > 1).join(" ");
+            if (combined !== lastSubtitleText) {
+              console.log("[Fluency] Frame text extracted:", combined);
+              onSubtitleDetected(combined);
+            }
+          }
+          frameProcessing = false;
+        })
+        .catch((err) => {
+          // Server not running or other error — silently ignore
+          frameProcessing = false;
+        });
+    });
+  }
+
+  function startFrameCapture() {
+    if (frameCaptureInterval) return;
+    console.log("[Fluency] No CC detected — starting frame capture for text extraction");
+
+    // Capture a frame every 4 seconds
+    frameCaptureInterval = setInterval(() => {
+      const video = getVideoElement();
+      if (video && !video.paused && !video.ended) {
+        captureFrame(video);
+      }
+    }, 4000);
+
+    // Capture one immediately
+    const video = getVideoElement();
+    if (video) captureFrame(video);
+  }
+
+  function stopFrameCapture() {
+    if (frameCaptureInterval) {
+      clearInterval(frameCaptureInterval);
+      frameCaptureInterval = null;
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Poll periodically as a fallback
   // ---------------------------------------------------------------
   function startPolling() {
     setInterval(() => {
       const text = extractSubtitleText();
-      onSubtitleDetected(text);
-    }, 800); // Slightly slower polling to avoid excessive DOM reads
+      if (text) onSubtitleDetected(text);
+    }, 800);
   }
 
   // ---------------------------------------------------------------
-  // Main: MutationObserver + polling
+  // Main
   // ---------------------------------------------------------------
   function init() {
-    console.log(`[Fluency] Content script active on ${HOST}`);
+    console.log(`[Fluency] Content script v2 active on ${HOST}`);
 
     const observer = new MutationObserver(handleMutation);
     observer.observe(document.body, {
@@ -204,8 +251,29 @@
     // Initial scan after page load
     setTimeout(() => {
       const text = extractSubtitleText();
-      onSubtitleDetected(text);
-    }, 2000);
+      if (text) {
+        onSubtitleDetected(text);
+      } else {
+        // No CC found after initial scan — start frame capture after delay
+        noCCTimer = setTimeout(() => {
+          if (!ccDetected) startFrameCapture();
+        }, 10000);
+      }
+    }, 3000);
+
+    // Listen for video play events to restart frame capture
+    document.addEventListener("play", (e) => {
+      if (e.target && e.target.tagName === "VIDEO") {
+        const video = e.target;
+        // Check if CC exists
+        setTimeout(() => {
+          const text = extractSubtitleText();
+          if (!text && !ccDetected) {
+            startFrameCapture();
+          }
+        }, 5000);
+      }
+    }, true);
   }
 
   if (document.readyState === "loading") {

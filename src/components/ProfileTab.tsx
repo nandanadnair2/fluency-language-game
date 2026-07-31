@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import {
   User,
@@ -8,18 +8,21 @@ import {
   Flame,
   Trash,
   Gear,
-  ArrowUp,
-  ArrowDown,
-  JapaneseFlag,
   DownloadSimple,
+  PencilSimple,
+  Camera,
+  Check,
+  X,
 } from "@phosphor-icons/react";
 import XPSprout from "@/components/XPSprout";
 import StreakCard from "@/components/StreakCard";
 import QuestBoard from "@/components/QuestBoard";
 import LootDeck from "@/components/LootDeck";
 import LevelUpModal from "@/components/LevelUpModal";
+import Leaderboard from "@/components/Leaderboard";
 import { useGameStore } from "@/lib/game-state";
 import type { VocabularyWord } from "@/lib/db-vocabulary";
+import { Input } from "@/components/ui/input";
 
 export default function ProfileTab() {
   const xp = useGameStore((s) => s.xp);
@@ -32,10 +35,17 @@ export default function ProfileTab() {
   const totalWordsLearned = useGameStore((s) => s.totalWordsLearned);
   const todayWordsLearned = useGameStore((s) => s.todayWordsLearned);
   const resetForTesting = useGameStore((s) => s.resetForTesting);
+  const playerName = useGameStore((s) => s.playerName);
+  const playerAvatar = useGameStore((s) => s.playerAvatar);
+  const setPlayerName = useGameStore((s) => s.setPlayerName);
+  const setPlayerAvatar = useGameStore((s) => s.setPlayerAvatar);
 
   const [words, setWords] = useState<VocabularyWord[]>([]);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load words from IndexedDB
   useEffect(() => {
@@ -60,21 +70,60 @@ export default function ProfileTab() {
     []
   );
 
+  const startEditName = () => {
+    setEditNameValue(playerName);
+    setIsEditingName(true);
+  };
+
+  const saveName = () => {
+    const trimmed = editNameValue.trim();
+    if (trimmed.length > 0) {
+      setPlayerName(trimmed);
+    }
+    setIsEditingName(false);
+  };
+
+  const cancelEditName = () => {
+    setIsEditingName(false);
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setPlayerAvatar(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  };
+
   return (
     <div className="flex flex-col gap-4 h-full overflow-y-auto custom-scrollbar pb-4">
       {/* Profile header */}
       <div className="p-6 rounded-3xl bg-card shadow-xl border border-border/50">
         <div className="flex items-center gap-4 mb-4">
           <motion.div
-            className="w-16 h-16 rounded-full bg-coral/10 flex items-center justify-center"
+            className="w-16 h-16 rounded-full bg-coral/10 flex items-center justify-center overflow-hidden flex-shrink-0"
             animate={{ rotate: [0, -3, 3, 0] }}
             transition={{ duration: 4, repeat: Infinity }}
           >
-            <User size={32} weight="duotone" className="text-coral" />
+            {playerAvatar ? (
+              <img
+                src={playerAvatar}
+                alt={playerName}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <User size={32} weight="duotone" className="text-coral" />
+            )}
           </motion.div>
           <div className="flex-1 min-w-0">
             <h2 className="font-serif text-xl font-bold text-charcoal truncate">
-              Fluency Learner
+              {playerName}
             </h2>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-sm text-muted-foreground">
@@ -133,6 +182,93 @@ export default function ProfileTab() {
           🧠 Take the Tongue Twister Trial (🇯🇵 Japanese)
         </motion.button>
       </div>
+
+      {/* Profile Section — avatar + username editing */}
+      <motion.div
+        className="p-5 rounded-3xl bg-card shadow-xl border border-border/50"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        <h3 className="font-serif text-sm font-bold text-charcoal mb-3">Profile</h3>
+
+        <div className="flex items-start gap-4">
+          {/* Avatar */}
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="w-12 h-12 rounded-full bg-coral/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+              {playerAvatar ? (
+                <img
+                  src={playerAvatar}
+                  alt={playerName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-2xl">🎯</span>
+              )}
+            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-coral transition-colors"
+            >
+              <Camera size={11} weight="bold" />
+              Change
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarChange}
+              className="hidden"
+            />
+          </div>
+
+          {/* Username */}
+          <div className="flex-1 min-w-0">
+            {isEditingName ? (
+              <div className="flex items-center gap-1.5">
+                <Input
+                  value={editNameValue}
+                  onChange={(e) => setEditNameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveName();
+                    if (e.key === "Escape") cancelEditName();
+                  }}
+                  className="h-8 text-sm"
+                  maxLength={20}
+                  autoFocus
+                />
+                <button
+                  onClick={saveName}
+                  className="w-8 h-8 rounded-xl bg-sage/15 flex items-center justify-center hover:bg-sage/25 transition-colors flex-shrink-0"
+                >
+                  <Check size={14} weight="bold" className="text-sage" />
+                </button>
+                <button
+                  onClick={cancelEditName}
+                  className="w-8 h-8 rounded-xl bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-colors flex-shrink-0"
+                >
+                  <X size={14} weight="bold" className="text-muted-foreground" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-charcoal truncate">
+                  {playerName}
+                </span>
+                <button
+                  onClick={startEditName}
+                  className="w-6 h-6 rounded-lg bg-secondary/80 flex items-center justify-center hover:bg-secondary transition-colors flex-shrink-0"
+                >
+                  <PencilSimple size={12} weight="bold" className="text-muted-foreground" />
+                </button>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Level {level} • {xp} XP
+            </p>
+          </div>
+        </div>
+      </motion.div>
 
       {/* Settings Panel (collapsible) */}
       {showSettings && (
@@ -227,6 +363,9 @@ export default function ProfileTab() {
 
       {/* Quest Board */}
       <QuestBoard quests={quests} onCompleteQuest={completeQuest} />
+
+      {/* Leaderboard */}
+      <Leaderboard />
 
       {/* Loot Deck */}
       <LootDeck words={words} onDeleteWord={handleDeleteWord} />

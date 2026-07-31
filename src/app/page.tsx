@@ -26,6 +26,7 @@ export default function Home() {
   const xp = useGameStore((s) => s.xp);
   const level = useGameStore((s) => s.level);
   const totalWordsLearned = useGameStore((s) => s.totalWordsLearned);
+  const playerAvatar = useGameStore((s) => s.playerAvatar);
 
   return (
     <div className="min-h-screen flex flex-col bg-cream">
@@ -52,6 +53,17 @@ export default function Home() {
 
           {/* Mini stats */}
           <div className="flex items-center gap-2">
+            {playerAvatar ? (
+              <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0">
+                <img
+                  src={playerAvatar}
+                  alt="avatar"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <span className="text-sm">🎯</span>
+            )}
             <div className="px-2.5 py-1 rounded-full bg-sage/10 flex items-center gap-1">
               <span className="text-xs font-bold text-sage">Lv.{level}</span>
             </div>
