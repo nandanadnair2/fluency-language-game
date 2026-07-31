@@ -116,7 +116,14 @@ export default function WatchtowerTab() {
       setSocketConnecting(true);
       setConnectionError(null);
 
-      const socket = mod.io("/?XTransformPort=3004", {
+      // Connect to WebSocket service.
+      // In the sandbox: routes through Caddy gateway via XTransformPort.
+      // Locally: connects directly to port 3004.
+      const socketUrl = typeof window !== "undefined"
+        ? `${window.location.protocol}//${window.location.hostname}:3004`
+        : "http://localhost:3004";
+
+      const socket = mod.io(socketUrl, {
         path: "/",
         transports: ["websocket", "polling"],
         timeout: 10000,
