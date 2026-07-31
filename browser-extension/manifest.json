@@ -1,9 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Fluency - Language Learner",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Sync subtitles from Netflix/YouTube to Fluency for real-time translation. Supports videos with and without closed captions via audio capture + ASR.",
   "permissions": ["storage", "activeTab"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "web_accessible_resources": [
     {
       "resources": ["audio-capture.js"],

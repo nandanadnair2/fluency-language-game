@@ -332,8 +332,9 @@
     }
   }
 
-  // Listen for audio status messages from content script
+  // Listen for messages from background + content script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Audio capture status (from content script via background)
     if (message.type === "FLUENCY_AUDIO_STATUS") {
       if (message.status === "active") {
         updateAudioIndicator(true, "Capturing audio for AI transcription…");
@@ -341,6 +342,19 @@
         updateAudioIndicator(true, "Audio error: " + (message.error || "unknown"));
       } else {
         updateAudioIndicator(false);
+      }
+    }
+
+    // Transcription result (from background service worker)
+    if (message.type === "FLUENCY_TRANSCRIBED") {
+      if (message.error) {
+        updateAudioIndicator(true, "⚠️ Transcription error: " + message.error);
+      } else if (message.text) {
+        updateSubtitlePreview(message.text);
+        updateAudioIndicator(true, "✅ Speech detected — translating…");
+      } else if (message.info) {
+        // No speech in this chunk — still listening
+        updateAudioIndicator(true, "Listening… " + message.info);
       }
     }
   });

@@ -69,7 +69,8 @@
   });
 
   // ---------------------------------------------------------------
-  // Audio Transcription — send chunk to /api/transcribe
+  // Audio Transcription — route through background service worker
+  // (avoids mixed-content HTTPS→HTTP block on youtube.com/netflix.com)
   // ---------------------------------------------------------------
   let transcriptionPending = false;
 
@@ -77,38 +78,28 @@
     if (transcriptionPending) return;
     transcriptionPending = true;
 
-    chrome.storage.local.get(["fluency_serverUrl"], (result) => {
-      const serverUrl = (result.fluency_serverUrl || "http://localhost:3000")
-        .trim()
-        .replace(/\/+$/, "");
-
-      fetch(`${serverUrl}/api/transcribe`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioBase64: base64Audio, mimeType }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.text && data.text.trim().length > 0) {
-            const text = data.text.trim();
-            // Store transcribed text as subtitle (same flow as CC)
-            chrome.storage.local.set({
-              fluency_lastSubtitle: text,
-              fluency_lastTimestamp: Date.now(),
-              fluency_audioMode: true,
-            });
-            console.log("[Fluency] Audio transcribed:", text.slice(0, 60));
-          }
+    // Send to background service worker — it calls /api/transcribe
+    chrome.runtime.sendMessage(
+      {
+        type: "FLUENCY_AUDIO_CHUNK_BG",
+        data: base64Audio,
+        mimeType: mimeType,
+      },
+      (response) => {
+        // Response is { status: "processing" } or { status: "busy" }
+        if (response && response.status === "busy") {
+          transcriptionPending = false;
+          return;
+        }
+        // The background handles storing results and notifying us.
+        // Give it time to process, then allow next chunk.
+        setTimeout(() => {
           transcriptionPending = false;
           // Tell audio-capture.js it can send the next chunk
           window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
-        })
-        .catch((err) => {
-          console.warn("[Fluency] Transcription failed:", err.message);
-          transcriptionPending = false;
-          window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
-        });
-    });
+        }, 5000);
+      }
+    );
   }
 
   // ---------------------------------------------------------------
