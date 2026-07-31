@@ -486,3 +486,27 @@ Stage Summary:
 - Frame capture (VLM) remains as tertiary fallback
 - All lint passes clean
 - ZIP updated for user re-download
+
+---
+Task ID: 2-1
+Agent: main-developer
+Task: Fix Chrome Extension audio capture → subtitle pipeline (connected but no subtitles appearing)
+
+Work Log:
+- Read and analyzed all pipeline files: audio-capture.js, content.js, background.js, popup.js, popup.html, /api/transcribe
+- Identified 4 critical bugs in the pipeline
+- Rewrote audio-capture.js v2: added chunk production monitoring (detects muted/DRM video), mute detection, error logging
+- Rewrote content.js v4: fixed deadlock on "busy" response (now posts FLUENCY_TRANSCRIPTION_DONE), replaced blind 5s timeout with FLUENCY_TRANSCRIBED listener, added 20s safety timeout, added direct fetch fallback
+- Rewrote background.js v2: better error handling, stores audio diagnostics in chrome.storage, sends detailed FLUENCY_TRANSCRIBED messages
+- Rewrote popup.js v6: detailed stage-by-step status display (capturing/transcribing/success/no_speech/no_data/muted/error), diagnostics bar showing pipeline state
+- Updated popup.html: added diagnostics section, improved audio indicator with dynamic labels
+- Updated manifest.json to v2.3.0
+- Verified dev server running, lint clean, API endpoint reachable
+- Started ws-service on port 3004
+- Verified web app via browser agent: all tabs functional, no errors
+
+Stage Summary:
+- Fixed 4 critical bugs: (1) deadlock on busy response, (2) blind 5s timeout, (3) no chunk monitoring, (4) no diagnostic visibility
+- Pipeline now has proper completion signaling: background → FLUENCY_TRANSCRIBED → content.js → FLUENCY_TRANSCRIPTION_DONE → audio-capture.js
+- Popup now shows detailed status at each stage of the pipeline
+- All extension files updated to v2.3.0

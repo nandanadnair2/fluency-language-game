@@ -1,8 +1,11 @@
 /**
- * Fluency Content Script v3
+ * Fluency Content Script v4
  * Detects subtitle/caption text from YouTube and Netflix.
  * Falls back to audio capture + ASR for videos WITHOUT closed captions.
- * Also supports frame capture as a secondary fallback.
+ * Also supports frame capture as a tertiary fallback.
+ *
+ * v4: Fixed deadlock when background returns "busy", added FLUENCY_TRANSCRIBED
+ * listener for proper completion detection instead of blind 5s timeout.
  */
 
 (function () {
@@ -37,6 +40,9 @@
     script.onload = () => {
       console.log("[Fluency] Audio capture script injected");
     };
+    script.onerror = (e) => {
+      console.error("[Fluency] Failed to inject audio-capture.js:", e);
+    };
     (document.head || document.documentElement).appendChild(script);
   }
 
@@ -46,37 +52,57 @@
   window.addEventListener("message", (event) => {
     if (!event.data || typeof event.data.type !== "string") return;
 
-    // Audio chunk received — send to /api/transcribe
+    // Audio chunk received — send to background for transcription
     if (event.data.type === "FLUENCY_AUDIO_CHUNK") {
       handleAudioChunk(event.data.data, event.data.mimeType);
     }
 
     // Audio capture status updates — forward to popup
     if (event.data.type === "FLUENCY_AUDIO_STATUS") {
-      chrome.runtime.sendMessage({
-        type: "FLUENCY_AUDIO_STATUS",
-        status: event.data.status,
-        error: event.data.error,
-      });
-      if (event.data.status === "active") {
+      // Store audio mode state
+      const status = event.data.status;
+      if (status === "active" || status === "active_data") {
         audioCaptureActive = true;
         chrome.storage.local.set({ fluency_audioMode: true });
-      } else if (event.data.status === "stopped" || event.data.status === "error") {
+      } else if (status === "stopped" || status === "error") {
         audioCaptureActive = false;
         chrome.storage.local.set({ fluency_audioMode: false });
       }
+
+      // Forward to popup via background
+      chrome.runtime.sendMessage({
+        type: "FLUENCY_AUDIO_STATUS",
+        status: status,
+        error: event.data.error,
+        codec: event.data.codec,
+        audioTracks: event.data.audioTracks,
+        chunksProduced: event.data.chunksProduced,
+        elapsed: event.data.elapsed,
+      }).catch(() => {});
     }
   });
 
   // ---------------------------------------------------------------
-  // Audio Transcription — route through background service worker
-  // (avoids mixed-content HTTPS→HTTP block on youtube.com/netflix.com)
+  // Audio Transcription Pipeline
+  // Route through background service worker (avoids mixed-content HTTPS→HTTP)
   // ---------------------------------------------------------------
   let transcriptionPending = false;
+  let transcriptionTimeout = null;
+  let chunksSent = 0;
+  let chunksCompleted = 0;
 
   function handleAudioChunk(base64Audio, mimeType) {
     if (transcriptionPending) return;
     transcriptionPending = true;
+    chunksSent++;
+
+    // Safety timeout: if background never responds with TRANSCRIBED, reset after 20s
+    clearTimeout(transcriptionTimeout);
+    transcriptionTimeout = setTimeout(() => {
+      console.warn("[Fluency] Transcription safety timeout — resetting pipeline");
+      transcriptionPending = false;
+      window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
+    }, 20000);
 
     // Send to background service worker — it calls /api/transcribe
     chrome.runtime.sendMessage(
@@ -84,23 +110,105 @@
         type: "FLUENCY_AUDIO_CHUNK_BG",
         data: base64Audio,
         mimeType: mimeType,
+        chunkId: chunksSent,
       },
       (response) => {
-        // Response is { status: "processing" } or { status: "busy" }
-        if (response && response.status === "busy") {
-          transcriptionPending = false;
+        if (!response) {
+          // Background not available — use direct fetch fallback
+          console.warn("[Fluency] Background not responding, using direct fetch");
+          directTranscribe(base64Audio, mimeType);
           return;
         }
-        // The background handles storing results and notifying us.
-        // Give it time to process, then allow next chunk.
-        setTimeout(() => {
+
+        if (response.status === "busy") {
+          console.log("[Fluency] Background is busy — will retry on next chunk");
+          // CRITICAL FIX: Reset pending and signal audio-capture to try again
           transcriptionPending = false;
-          // Tell audio-capture.js it can send the next chunk
-          window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
-        }, 5000);
+          clearTimeout(transcriptionTimeout);
+          // Delay the DONE signal slightly so audio-capture doesn't immediately retry
+          setTimeout(() => {
+            window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
+          }, 2000);
+          return;
+        }
+
+        // status === "processing" — background will send FLUENCY_TRANSCRIBED when done
+        // We don't set a blind timer here; the FLUENCY_TRANSCRIBED handler does it
+        console.log(`[Fluency] Chunk #${chunksSent} sent to background for transcription`);
       }
     );
   }
+
+  // Direct fetch fallback — used when background is not available
+  function directTranscribe(base64Audio, mimeType) {
+    chrome.storage.local.get(["fluency_serverUrl"], (result) => {
+      const serverUrl = (result.fluency_serverUrl || "http://localhost:3000")
+        .trim()
+        .replace(/\/+$/, "");
+
+      fetch(`${serverUrl}/api/transcribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audioBase64: base64Audio, mimeType }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          handleTranscriptionResult(data);
+          transcriptionPending = false;
+          clearTimeout(transcriptionTimeout);
+          window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
+        })
+        .catch((err) => {
+          console.error("[Fluency] Direct transcription failed:", err);
+          transcriptionPending = false;
+          clearTimeout(transcriptionTimeout);
+          window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
+        });
+    });
+  }
+
+  // Handle transcription result (from FLUENCY_TRANSCRIBED message or direct fetch)
+  function handleTranscriptionResult(data) {
+    chunksCompleted++;
+    console.log(`[Fluency] Transcription #${chunksCompleted} result:`, data.text ? `"${data.text.slice(0, 50)}"` : "empty");
+
+    if (data.text && data.text.trim().length > 0) {
+      const text = data.text.trim();
+      chrome.storage.local.set({
+        fluency_lastSubtitle: text,
+        fluency_lastTimestamp: Date.now(),
+        fluency_audioMode: true,
+      }, () => {
+        console.log("[Fluency] Subtitle stored:", text.slice(0, 60));
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Listen for FLUENCY_TRANSCRIBED from background (completion signal)
+  // This replaces the old blind 5-second timeout
+  // ---------------------------------------------------------------
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "FLUENCY_TRANSCRIBED") {
+      clearTimeout(transcriptionTimeout);
+
+      if (message.error) {
+        console.warn("[Fluency] Transcription error:", message.error);
+      } else if (message.text) {
+        handleTranscriptionResult({ text: message.text });
+      } else {
+        console.log("[Fluency] Transcription returned empty — no speech detected");
+      }
+
+      // Signal audio-capture.js that it can send the next chunk
+      transcriptionPending = false;
+      window.postMessage({ type: "FLUENCY_TRANSCRIPTION_DONE" }, "*");
+
+      sendResponse({ received: true });
+    }
+
+    // Don't return true — we handle synchronously
+  });
 
   // ---------------------------------------------------------------
   // Subtitle selectors — ONLY target the actual subtitle containers
@@ -211,7 +319,6 @@
 
   // ---------------------------------------------------------------
   // Frame capture for videos WITHOUT closed captions (fallback)
-  // Captures video frames and sends to VLM for text extraction
   // ---------------------------------------------------------------
   function getVideoElement() {
     const videos = document.querySelectorAll("video");
@@ -309,7 +416,7 @@
   // Main
   // ---------------------------------------------------------------
   function init() {
-    console.log(`[Fluency] Content script v3 active on ${HOST}`);
+    console.log(`[Fluency] Content script v4 active on ${HOST}`);
 
     // Inject audio capture script into the page (MAIN world)
     injectAudioCapture();
@@ -329,8 +436,8 @@
       if (text) {
         onSubtitleDetected(text);
       } else {
-        // No CC found — start frame capture after delay
-        // Audio capture is handled by the injected audio-capture.js
+        // No CC found — audio capture handles it via injected script
+        // Frame capture as tertiary fallback
         noCCTimer = setTimeout(() => {
           if (!ccDetected && !audioCaptureActive) {
             startFrameCapture();

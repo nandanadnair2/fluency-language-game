@@ -1,11 +1,10 @@
 /**
- * Fluency Popup Script v5
+ * Fluency Popup Script v6
  * Connects to a self-hosted Fluency WebSocket service.
- * The user provides their Fluency server URL and the extension
- * connects via Socket.io to sync subtitles in real-time.
+ * Shows detailed transcription pipeline status with diagnostics.
  *
- * NOTE: This requires a self-hosted Fluency server. The extension cannot
- * connect to cloud-hosted sandbox environments.
+ * v6: Added detailed stage-by-step status display, chunk counter,
+ * last-error display, and "last update" freshness indicator.
  */
 
 (function () {
@@ -19,6 +18,12 @@
   const statusText      = document.getElementById("statusText");
   const subtitlePreview = document.getElementById("subtitlePreview");
   const connectionHint  = document.getElementById("connectionHint");
+  const audioIndicator  = document.getElementById("audioIndicator");
+  const audioDetail     = document.getElementById("audioDetail");
+  const audioLabel      = document.getElementById("audioLabel");
+  const audioIcon       = document.querySelector(".audio-icon");
+  const diagSection     = document.getElementById("diagnosticsSection");
+  const diagContent     = document.getElementById("diagnosticsContent");
 
   // ---- State ----
   let socket = null;
@@ -29,33 +34,33 @@
   let storagePollTimer = null;
   let intentionalClose = false;
 
+  // ---- Diagnostics State ----
+  let audioStage = "idle"; // idle, capturing, transcribing, error, no_data, muted
+  let chunkCount = 0;
+  let transcriptionCount = 0;
+  let lastError = "";
+  let lastUpdateTime = 0;
+
   // ---- Server URL Helpers ----
-  // The user enters the web app URL (e.g. http://localhost:81).
-  // We route through the Caddy gateway via XTransformPort=3004.
   function getServerUrl() {
     const val = serverUrlInput.value.trim();
     if (val && val.length > 4) return val;
-    return ""; // No default — user must enter their web app URL
+    return "";
   }
 
   function buildSocketUrl(serverBase) {
     let url = serverBase.trim().replace(/\/+$/, "");
-    // Remove any existing query/hash
     const hashIdx = url.indexOf("#");
     const qIdx = url.indexOf("?");
     if (hashIdx > -1) url = url.substring(0, hashIdx);
     if (qIdx > -1) url = url.substring(0, qIdx);
-    // Extract host and optional port
     const urlMatch = url.match(/^(https?:\/\/[^:]+)(?::(\d+))?/);
     if (urlMatch) {
       const base = urlMatch[1];
       const port = urlMatch[2];
-      // For localhost: ALWAYS use port 3004 (the WebSocket service)
-      // regardless of what port the user entered (3000 = web app, 3004 = ws)
       if (base.includes("localhost") || base.includes("127.0.0.1")) {
         return `${base}:3004`;
       }
-      // For remote URLs: use the port user provided, or default to the URL as-is
       return url;
     }
     return url;
@@ -105,11 +110,95 @@
     }
   }
 
+  // ---- Audio Stage Display ----
+  function updateAudioStage(stage, detail) {
+    audioStage = stage;
+    updateDiagnostics();
+
+    if (stage === "idle") {
+      audioIndicator.classList.remove("visible");
+      return;
+    }
+
+    audioIndicator.classList.add("visible");
+
+    switch (stage) {
+      case "capturing":
+        audioLabel.textContent = "🎙️ Audio Capture Active";
+        audioDetail.textContent = detail || "Capturing audio for AI transcription…";
+        audioIcon.textContent = "🎙️";
+        break;
+      case "transcribing":
+        audioLabel.textContent = "⚡ Transcribing…";
+        audioDetail.textContent = detail || "Sending audio to AI for speech recognition…";
+        audioIcon.textContent = "⚡";
+        break;
+      case "success":
+        audioLabel.textContent = "✅ Speech Detected";
+        audioDetail.textContent = detail || "Translating recognized speech…";
+        audioIcon.textContent = "✅";
+        setTimeout(() => {
+          if (audioStage === "success") {
+            audioStage = "capturing";
+            updateAudioStage("capturing", "Listening for more speech…");
+          }
+        }, 3000);
+        break;
+      case "no_speech":
+        audioLabel.textContent = "🔇 Listening…";
+        audioDetail.textContent = detail || "No speech detected yet — keep the video playing";
+        audioIcon.textContent = "🔇";
+        break;
+      case "no_data":
+        audioLabel.textContent = "⚠️ No Audio Data";
+        audioDetail.textContent = detail || "Audio capture active but no data received. Is the video unmuted?";
+        audioIcon.textContent = "⚠️";
+        break;
+      case "muted":
+        audioLabel.textContent = "🔇 Video Muted";
+        audioDetail.textContent = detail || "Please unmute the video for audio capture to work";
+        audioIcon.textContent = "🔇";
+        break;
+      case "error":
+        audioLabel.textContent = "❌ Audio Error";
+        audioDetail.textContent = detail || "An error occurred during audio capture";
+        audioIcon.textContent = "❌";
+        break;
+      default:
+        audioLabel.textContent = "🎙️ Audio Capture";
+        audioDetail.textContent = detail || "";
+        audioIcon.textContent = "🎙️";
+    }
+  }
+
+  // ---- Diagnostics Panel ----
+  function updateDiagnostics() {
+    if (!diagContent) return;
+
+    const lines = [];
+    lines.push(`Stage: ${audioStage}`);
+
+    if (chunkCount > 0) {
+      lines.push(`Chunks captured: ${chunkCount}`);
+    }
+    if (transcriptionCount > 0) {
+      lines.push(`Transcriptions: ${transcriptionCount}`);
+    }
+    if (lastError) {
+      lines.push(`Last error: ${lastError}`);
+    }
+    if (lastUpdateTime > 0) {
+      const secondsAgo = Math.round((Date.now() - lastUpdateTime) / 1000);
+      lines.push(`Last update: ${secondsAgo}s ago`);
+    }
+
+    diagContent.textContent = lines.join(" | ") || "No activity yet";
+  }
+
   // ---- Socket.io Connection ----
   function connect() {
     if (isConnected || isConnecting) return;
 
-    // Validate server URL
     const serverUrl = getServerUrl();
     if (!serverUrl) {
       serverUrlInput.focus();
@@ -119,7 +208,6 @@
       return;
     }
 
-    // Validate room code
     roomCode = roomInput.value.trim();
     if (roomCode.length < 1) {
       roomInput.focus();
@@ -139,7 +227,6 @@
 
     try {
       socket = io(socketUrl, {
-        // Match the ws-service path configuration
         path: "/",
         transports: ["websocket", "polling"],
         timeout: 8000,
@@ -149,7 +236,6 @@
         forceNew: true,
       });
 
-      // Connection timeout fallback
       const connectTimeout = setTimeout(() => {
         if (isConnecting && !isConnected) {
           setStatus("error", "Connection timed out — check the server URL");
@@ -165,12 +251,10 @@
         console.log(`[Fluency] Socket connected: ${socket.id}`);
         setStatus("connected");
 
-        // Join the room
         socket.emit("join-room", roomCode, (response) => {
           console.log(`[Fluency] Joined room ${roomCode}:`, response);
         });
 
-        // Start polling chrome.storage for subtitles
         startStoragePolling();
       });
 
@@ -258,11 +342,32 @@
 
   function pollStorage() {
     chrome.storage.local.get(
-      ["fluency_lastSubtitle", "fluency_lastTimestamp"],
+      [
+        "fluency_lastSubtitle",
+        "fluency_lastTimestamp",
+        "fluency_audioMode",
+        "fluency_audioStatus",
+        "fluency_audioError",
+        "fluency_audioChunksProduced",
+        "fluency_audioElapsed",
+        "fluency_lastError",
+      ],
       (result) => {
+        // Update subtitle preview
         const text = result.fluency_lastSubtitle || "";
         updateSubtitlePreview(text);
+        lastUpdateTime = result.fluency_lastTimestamp || 0;
 
+        // Update diagnostics from storage
+        if (result.fluency_audioChunksProduced) {
+          chunkCount = result.fluency_audioChunksProduced;
+        }
+        if (result.fluency_lastError) {
+          lastError = result.fluency_lastError;
+        }
+        updateDiagnostics();
+
+        // Sync subtitle to room via socket
         if (isConnected && text && text !== lastSentText) {
           lastSentText = text;
           try {
@@ -299,7 +404,7 @@
 
   // Restore saved values on popup open
   chrome.storage.local.get(
-    ["fluency_roomCode", "fluency_serverUrl"],
+    ["fluency_roomCode", "fluency_serverUrl", "fluency_lastSubtitle", "fluency_lastTimestamp", "fluency_audioMode", "fluency_audioStatus"],
     (result) => {
       if (result.fluency_roomCode) {
         roomInput.value = result.fluency_roomCode;
@@ -307,6 +412,15 @@
       if (result.fluency_serverUrl) {
         serverUrlInput.value = result.fluency_serverUrl;
       }
+      updateSubtitlePreview(result.fluency_lastSubtitle || "");
+      lastUpdateTime = result.fluency_lastTimestamp || 0;
+
+      // Restore audio mode from storage
+      if (result.fluency_audioMode) {
+        const status = result.fluency_audioStatus || "active";
+        updateAudioStage("capturing", "Audio capture active on video page");
+      }
+      updateDiagnostics();
     }
   );
 
@@ -319,56 +433,44 @@
     chrome.storage.local.set({ fluency_serverUrl: serverUrlInput.value });
   });
 
-  // ---- Audio Capture Status ----
-  const audioIndicator = document.getElementById("audioIndicator");
-  const audioDetail = document.getElementById("audioDetail");
-
-  function updateAudioIndicator(active, detail) {
-    if (active) {
-      audioIndicator.classList.add("visible");
-      if (detail) audioDetail.textContent = detail;
-    } else {
-      audioIndicator.classList.remove("visible");
-    }
-  }
-
-  // Listen for messages from background + content script
+  // ---- Message Handlers ----
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Audio capture status (from content script via background)
+    // Audio capture status from content script
     if (message.type === "FLUENCY_AUDIO_STATUS") {
-      if (message.status === "active") {
-        updateAudioIndicator(true, "Capturing audio for AI transcription…");
-      } else if (message.status === "error") {
-        updateAudioIndicator(true, "Audio error: " + (message.error || "unknown"));
-      } else {
-        updateAudioIndicator(false);
+      const status = message.status;
+      if (status === "active" || status === "active_data") {
+        if (status === "active_data" && message.chunksProduced) {
+          chunkCount = message.chunksProduced;
+          updateAudioStage("capturing", `Capturing audio — ${chunkCount} chunk(s) recorded`);
+        } else {
+          updateAudioStage("capturing", "Audio stream ready — waiting for first chunk…");
+        }
+      } else if (status === "no_data") {
+        updateAudioStage("no_data", `No audio data after ${message.elapsed || "?"}s — is the video unmuted?`);
+      } else if (status === "muted") {
+        updateAudioStage("muted", message.error || "Video appears to be muted");
+      } else if (status === "stopped") {
+        updateAudioStage("idle");
+      } else if (status === "error") {
+        lastError = message.error || "Audio capture error";
+        updateAudioStage("error", message.error || "Audio capture error");
       }
     }
 
-    // Transcription result (from background service worker)
+    // Transcription result from background
     if (message.type === "FLUENCY_TRANSCRIBED") {
       if (message.error) {
-        updateAudioIndicator(true, "⚠️ Transcription error: " + message.error);
+        lastError = message.error;
+        updateAudioStage("error", "Transcription: " + message.error);
       } else if (message.text) {
+        transcriptionCount++;
+        updateAudioStage("success", `Recognized: "${message.text.slice(0, 40)}…"`);
         updateSubtitlePreview(message.text);
-        updateAudioIndicator(true, "✅ Speech detected — translating…");
       } else if (message.info) {
-        // No speech in this chunk — still listening
-        updateAudioIndicator(true, "Listening… " + message.info);
+        updateAudioStage("no_speech", message.info);
       }
     }
   });
-
-  // Restore audio mode state on popup open
-  chrome.storage.local.get(
-    ["fluency_lastSubtitle", "fluency_lastTimestamp", "fluency_audioMode"],
-    (result) => {
-      updateSubtitlePreview(result.fluency_lastSubtitle || "");
-      if (result.fluency_audioMode) {
-        updateAudioIndicator(true, "Audio capture active on video page");
-      }
-    }
-  );
 
   // Cleanup on popup close
   window.addEventListener("unload", () => {
