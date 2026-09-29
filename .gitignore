@@ -56,3 +56,4 @@ server.log
 prisma/dev.db
 # agent internals
 .hermes/
+!.env.example
