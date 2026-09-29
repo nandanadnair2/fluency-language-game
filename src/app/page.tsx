@@ -19,6 +19,8 @@ import StoriesTab from "@/components/StoriesTab";
 import SocialTab from "@/components/SocialTab";
 import LanguageGamesTab from "@/components/LanguageGamesTab";
 import ARTab from "@/components/ARTab";
+import SignInScreen from "@/components/SignInScreen";
+import { useAuth } from "@/lib/auth-context";
 import { useGameStore } from "@/lib/game-state";
 
 type TabId = "scanner" | "watchtower" | "learn" | "social" | "profile";
@@ -71,10 +73,33 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("scanner");
   const [scannerSub, setScannerSub] = useState<"scan" | "ar">("scan");
   const [learnSub, setLearnSub] = useState<"stories" | "games">("stories");
+  const { user, loading } = useAuth();
   const xp = useGameStore((s) => s.xp);
   const level = useGameStore((s) => s.level);
   const totalWordsLearned = useGameStore((s) => s.totalWordsLearned);
   const playerAvatar = useGameStore((s) => s.playerAvatar);
+
+  // Gate the app behind sign-in: show a centered splash while the session
+  // is being checked, then the Sign In / Sign Up screen until the user is
+  // authenticated. The auth context flips `user` on success and the app
+  // renders in place.
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-cream">
+        <motion.div
+          animate={{ rotate: [0, 360] }}
+          transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+          className="w-12 h-12 rounded-xl bg-coral/10 flex items-center justify-center"
+        >
+          <img src="/logo.svg" alt="Fluency" className="w-8 h-8" />
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <SignInScreen />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-cream">

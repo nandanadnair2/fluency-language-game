@@ -38,12 +38,9 @@ export async function POST(req: Request) {
 
     // Create session
     const token = await createSession(user.id);
-    const response = NextResponse.json({
+    return setSessionCookie(token, {
       user: { id: user.id, email: user.email, name: user.name },
-      message: "Registration successful",
     });
-    
-    return setSessionCookie(token);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

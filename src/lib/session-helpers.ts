@@ -32,10 +32,11 @@ export async function createSession(userId: string): Promise<string> {
   return token;
 }
 
-export function setSessionCookie(token: string): Response {
-  return new NextResponse(null, {
-    headers: {
-      "set-cookie": `${SESSION_COOKIE_NAME}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${7 * 24 * 60 * 60}`,
-    },
-  });
+export function setSessionCookie(token: string, body?: unknown): Response {
+  const response = body === undefined ? new NextResponse(null) : NextResponse.json(body);
+  response.headers.set(
+    "set-cookie",
+    `${SESSION_COOKIE_NAME}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${7 * 24 * 60 * 60}`
+  );
+  return response;
 }

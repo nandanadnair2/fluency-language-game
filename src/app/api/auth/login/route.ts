@@ -6,9 +6,9 @@ import { getSessionFromRequest, createSession, setSessionCookie } from "@/lib/se
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { email, password, name } = body;
+    const { email, password, name, action } = body;
 
-    if (password && password.length >= 6) {
+    if (action === "register") {
       // Register
       const existing = await prisma.user.findUnique({ where: { email } });
       if (existing) {
@@ -21,8 +21,9 @@ export async function POST(req: Request) {
       });
 
       const token = await createSession(user.id);
-      const response = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name } });
-      return setSessionCookie(token);
+      return setSessionCookie(token, {
+        user: { id: user.id, email: user.email, name: user.name },
+      });
     } else {
       // Login
       const user = await prisma.user.findUnique({ where: { email } });
@@ -36,8 +37,9 @@ export async function POST(req: Request) {
       }
 
       const token = await createSession(user.id);
-      const response = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name } });
-      return setSessionCookie(token);
+      return setSessionCookie(token, {
+        user: { id: user.id, email: user.email, name: user.name },
+      });
     }
   } catch (error) {
     console.error("Auth error:", error);
