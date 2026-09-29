@@ -11,6 +11,7 @@ import {
   Users,
   GameController,
   Sparkle,
+  SignOut,
 } from "@phosphor-icons/react";
 import ScannerTab from "@/components/ScannerTab";
 import WatchtowerTab from "@/components/WatchtowerTab";
@@ -73,7 +74,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("scanner");
   const [scannerSub, setScannerSub] = useState<"scan" | "ar">("scan");
   const [learnSub, setLearnSub] = useState<"stories" | "games">("stories");
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const xp = useGameStore((s) => s.xp);
   const level = useGameStore((s) => s.level);
   const totalWordsLearned = useGameStore((s) => s.totalWordsLearned);
@@ -150,6 +151,15 @@ export default function Home() {
               <span className="text-[10px]">⚡</span>
               <span className="text-xs font-bold text-coral">{xp}</span>
             </div>
+            {/* Sign out */}
+            <button
+              onClick={() => signOut()}
+              title="Sign out"
+              aria-label="Sign out"
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
+            >
+              <SignOut size={18} weight="regular" />
+            </button>
           </div>
         </div>
       </header>
