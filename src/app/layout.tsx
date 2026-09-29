@@ -3,6 +3,7 @@ import { Inter, Fraunces } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { AuthProvider } from "@/lib/auth-context";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -28,7 +29,8 @@ export const metadata: Metadata = {
     "vocabulary builder",
   ],
   icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>",
+    icon: "/logo.svg",
+    apple: "/logo.svg",
   },
 };
 
@@ -47,8 +49,10 @@ export default function RootLayout({
           defaultTheme="light"
           enableSystem={false}
         >
-          {children}
-          <Toaster />
+          <AuthProvider>
+            {children}
+            <Toaster />
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -143,12 +143,13 @@ export const useGameStore = create<GameState>()(
         let newCurrentStreak = state.currentStreak;
         let newLongestStreak = state.longestStreak;
         let newStreakHistory = state.streakHistory;
-        let newTodayWordsLearned = state.todayWordsLearned + 1;
+        let newTodayWordsLearned = state.todayWordsLearned;
         let newLastPracticeDate = state.lastPracticeDate;
         let newQuests = state.quests;
         let newLastQuestResetDate = state.lastQuestResetDate;
+        const isNewDay = state.lastPracticeDate !== today;
 
-        if (state.lastPracticeDate !== today) {
+        if (isNewDay) {
           // New day! Update streak
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
@@ -175,6 +176,9 @@ export const useGameStore = create<GameState>()(
             newQuests = generateDailyQuests();
             newLastQuestResetDate = today;
           }
+        } else {
+          // Same day — just increment
+          newTodayWordsLearned = state.todayWordsLearned + 1;
         }
 
         // Update scan quest

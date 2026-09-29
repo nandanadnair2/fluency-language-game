@@ -1,5 +1,18 @@
 import Dexie, { type EntityTable } from "dexie";
 
+export type WordContext = 
+  | "scanner" 
+  | "stories" 
+  | "watchtower" 
+  | "restaurant" 
+  | "street" 
+  | "anime" 
+  | "book" 
+  | "shopping" 
+  | "home" 
+  | "work"
+  | "other";
+
 export interface VocabularyWord {
   id?: number;
   original: string;
@@ -10,6 +23,7 @@ export interface VocabularyWord {
   savedAt: Date;
   xpEarned: number;
   reviewCount: number;
+  context?: WordContext;
 }
 
 export interface CachedTranslation {
@@ -28,8 +42,10 @@ class FluencyDB extends Dexie {
 
   constructor() {
     super("FluencyDB");
-    this.version(1).stores({
-      vocabulary: "++id, original, directTranslation, savedAt, sourceLanguage",
+    // Note: Adding 'context' column requires migration in production
+    // For now we use version 2
+    this.version(2).stores({
+      vocabulary: "++id, original, directTranslation, savedAt, sourceLanguage, context",
       cache: "++id, originalText, cachedAt",
     });
   }
@@ -42,8 +58,16 @@ export async function saveWord(word: Omit<VocabularyWord, "id">) {
   return await db.vocabulary.add(word);
 }
 
+export async function updateWordContext(id: number, context: WordContext) {
+  return await db.vocabulary.update(id, { context });
+}
+
 export async function getAllWords(): Promise<VocabularyWord[]> {
   return await db.vocabulary.orderBy("savedAt").reverse().toArray();
+}
+
+export async function getWordsByContext(context: WordContext): Promise<VocabularyWord[]> {
+  return await db.vocabulary.where("context").equals(context).sortBy("savedAt");
 }
 
 export async function deleteWord(id: number) {
@@ -76,3 +100,23 @@ export async function clearOldCache(daysOld: number = 7) {
   cutoff.setDate(cutoff.getDate() - daysOld);
   return await db.cache.where("cachedAt").below(cutoff).delete();
 }
+
+// Context helpers
+export const CONTEXT_LABELS: Record<WordContext, { label: string; icon: string; color: string }> = {
+  scanner: { label: "Scanner", icon: "📷", color: "bg-coral/15 text-coral" },
+  stories: { label: "Stories", icon: "📖", color: "bg-sage/15 text-sage" },
+  watchtower: { label: "Watchtower", icon: "🎬", color: "bg-butter/20 text-butter" },
+  restaurant: { label: "Restaurant", icon: "🍜", color: "bg-orange-100 text-orange-700" },
+  street: { label: "Street", icon: "🚶", color: "bg-blue-100 text-blue-700" },
+  anime: { label: "Anime", icon: "⛩️", color: "bg-pink-100 text-pink-700" },
+  book: { label: "Book", icon: "📚", color: "bg-purple-100 text-purple-700" },
+  shopping: { label: "Shopping", icon: "🛍️", color: "bg-green-100 text-green-700" },
+  home: { label: "Home", icon: "🏠", color: "bg-yellow-100 text-yellow-700" },
+  work: { label: "Work", icon: "💼", color: "bg-gray-100 text-gray-700" },
+  other: { label: "Other", icon: "📝", color: "bg-secondary text-muted-foreground" },
+};
+
+export const CONTEXT_FILTERS: (WordContext | "all")[] = [
+  "all", "scanner", "stories", "watchtower", "restaurant", "street", 
+  "anime", "book", "shopping", "home", "work", "other"
+];

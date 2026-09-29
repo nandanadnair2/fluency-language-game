@@ -20,6 +20,7 @@ import {
   Keyboard,
   FileText,
   CaretDown,
+  SpeakerHigh,
 } from "@phosphor-icons/react";
 import DynamicIsland from "@/components/DynamicIsland";
 import { useGameStore } from "@/lib/game-state";
@@ -373,6 +374,7 @@ export default function WatchtowerTab() {
           savedAt: new Date(),
           xpEarned: 3,
           reviewCount: 1,
+          context: "watchtower",
         });
       });
       addXP(3);
@@ -782,10 +784,28 @@ export default function WatchtowerTab() {
           </div>
 
           {subtitles[currentSubIndex] && (
-            <div className="p-4 rounded-2xl bg-secondary/50 text-center">
-              <p className="text-base text-charcoal leading-relaxed">
-                {subtitles[currentSubIndex].text}
-              </p>
+            <div className="space-y-3">
+              <div className="p-4 rounded-2xl bg-secondary/50 text-center">
+                <p className="text-base text-charcoal leading-relaxed">
+                  {subtitles[currentSubIndex].text}
+                </p>
+              </div>
+              
+              {/* Audio button for current subtitle */}
+              <button
+                onClick={() => {
+                  if ('speechSynthesis' in window && subtitles[currentSubIndex]?.text) {
+                    const utterance = new SpeechSynthesisUtterance(subtitles[currentSubIndex].text);
+                    utterance.lang = 'ja-JP';
+                    utterance.rate = 0.8;
+                    window.speechSynthesis.speak(utterance);
+                  }
+                }}
+                className="w-full py-3 rounded-2xl bg-coral/10 hover:bg-coral/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <SpeakerHigh size={18} weight="fill" className="text-coral" />
+                <span className="text-sm font-medium text-coral">Listen to pronunciation</span>
+              </button>
             </div>
           )}
         </motion.div>

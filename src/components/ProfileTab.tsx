@@ -19,6 +19,9 @@ import StreakCard from "@/components/StreakCard";
 import QuestBoard from "@/components/QuestBoard";
 import LootDeck from "@/components/LootDeck";
 import LevelUpModal from "@/components/LevelUpModal";
+import VocabularyQuiz from "@/components/VocabularyQuiz";
+import ChallengeMode from "@/components/ChallengeMode";
+import ProgressAnalytics from "@/components/ProgressAnalytics";
 import Leaderboard from "@/components/Leaderboard";
 import { useGameStore } from "@/lib/game-state";
 import type { VocabularyWord } from "@/lib/db-vocabulary";
@@ -42,17 +45,18 @@ export default function ProfileTab() {
 
   const [words, setWords] = useState<VocabularyWord[]>([]);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
+  const [isVocabQuizOpen, setIsVocabQuizOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load words from IndexedDB
+  // Load words from IndexedDB (once on mount)
   useEffect(() => {
     import("@/lib/db-vocabulary").then(({ getAllWords }) => {
       getAllWords().then(setWords);
     });
-  }, [isQuizOpen]); // refresh after quiz
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDeleteWord = useCallback(async (id: number) => {
     const { deleteWord } = await import("@/lib/db-vocabulary");
@@ -181,6 +185,18 @@ export default function ProfileTab() {
         >
           🧠 Take the Tongue Twister Trial (🇯🇵 Japanese)
         </motion.button>
+        
+        {/* Vocabulary Quiz Button - only show if user has words */}
+        {words.length >= 3 && (
+          <motion.button
+            onClick={() => setIsVocabQuizOpen(true)}
+            className="w-full mt-2 py-3 rounded-2xl bg-sage/10 text-charcoal font-semibold text-sm border border-sage/30 hover:bg-sage/20 transition-all active:scale-95"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            📚 Practice from Your Words ({words.length} saved)
+          </motion.button>
+        )}
       </div>
 
       {/* Settings Panel (collapsible) */}
@@ -374,6 +390,20 @@ export default function ProfileTab() {
         onClose={() => setIsQuizOpen(false)}
         onQuizComplete={handleQuizComplete}
       />
+      
+      {/* Vocabulary Quiz Modal */}
+      <VocabularyQuiz
+        isOpen={isVocabQuizOpen}
+        onClose={() => setIsVocabQuizOpen(false)}
+        onQuizComplete={handleQuizComplete}
+        words={words}
+      />
+
+      {/* Challenge Mode */}
+      <ChallengeMode />
+      
+      {/* Progress Analytics */}
+      <ProgressAnalytics />
     </div>
   );
 }

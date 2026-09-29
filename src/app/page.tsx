@@ -7,22 +7,70 @@ import {
   Television,
   User,
   DownloadSimple,
+  Book,
+  Users,
+  GameController,
+  Sparkle,
 } from "@phosphor-icons/react";
 import ScannerTab from "@/components/ScannerTab";
 import WatchtowerTab from "@/components/WatchtowerTab";
 import ProfileTab from "@/components/ProfileTab";
+import StoriesTab from "@/components/StoriesTab";
+import SocialTab from "@/components/SocialTab";
+import LanguageGamesTab from "@/components/LanguageGamesTab";
+import ARTab from "@/components/ARTab";
 import { useGameStore } from "@/lib/game-state";
 
-type TabId = "scanner" | "watchtower" | "profile";
+type TabId = "scanner" | "watchtower" | "learn" | "social" | "profile";
 
 const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "scanner", label: "Scanner", icon: Scan },
   { id: "watchtower", label: "Watchtower", icon: Television },
+  { id: "learn", label: "Learn", icon: Book },
+  { id: "social", label: "Social", icon: Users },
   { id: "profile", label: "Profile", icon: User },
 ];
 
+// Segmented pill toggle used to cluster related features under one tab
+type SubOption = { id: string; label: string; icon: React.ElementType };
+
+function SubToggle<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: SubOption[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex gap-1 p-1 rounded-2xl bg-card border border-border/50 mb-4">
+      {options.map((o) => {
+        const Icon = o.icon;
+        const active = value === o.id;
+        return (
+          <button
+            key={o.id}
+            onClick={() => onChange(o.id as T)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium transition-all ${
+              active
+                ? "bg-coral/15 text-coral shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Icon size={16} weight={active ? "fill" : "regular"} />
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("scanner");
+  const [scannerSub, setScannerSub] = useState<"scan" | "ar">("scan");
+  const [learnSub, setLearnSub] = useState<"stories" | "games">("stories");
   const xp = useGameStore((s) => s.xp);
   const level = useGameStore((s) => s.level);
   const totalWordsLearned = useGameStore((s) => s.totalWordsLearned);
@@ -39,7 +87,7 @@ export default function Home() {
               whileHover={{ rotate: 15 }}
               transition={{ type: "spring", stiffness: 300 }}
             >
-              <span className="text-lg">🎯</span>
+              <img src="/logo.svg" alt="Fluency" className="w-6 h-6" />
             </motion.div>
             <div>
               <h1 className="font-serif text-base font-bold text-charcoal leading-tight">
@@ -62,7 +110,13 @@ export default function Home() {
                 />
               </div>
             ) : (
-              <span className="text-sm">🎯</span>
+              <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0">
+                <img
+                  src="/logo.svg"
+                  alt="avatar"
+                  className="w-full h-full object-cover"
+                />
+              </div>
             )}
             <div className="px-2.5 py-1 rounded-full bg-sage/10 flex items-center gap-1">
               <span className="text-xs font-bold text-sage">Lv.{level}</span>
@@ -84,8 +138,34 @@ export default function Home() {
           transition={{ duration: 0.2 }}
           className="h-full"
         >
-          {activeTab === "scanner" && <ScannerTab />}
+          {activeTab === "scanner" && (
+            <>
+              <SubToggle
+                options={[
+                  { id: "scan", label: "Scanner", icon: Scan },
+                  { id: "ar", label: "AR", icon: Sparkle },
+                ]}
+                value={scannerSub}
+                onChange={setScannerSub}
+              />
+              {scannerSub === "scan" ? <ScannerTab /> : <ARTab />}
+            </>
+          )}
           {activeTab === "watchtower" && <WatchtowerTab />}
+          {activeTab === "learn" && (
+            <>
+              <SubToggle
+                options={[
+                  { id: "stories", label: "Stories", icon: Book },
+                  { id: "games", label: "Games", icon: GameController },
+                ]}
+                value={learnSub}
+                onChange={setLearnSub}
+              />
+              {learnSub === "stories" ? <StoriesTab /> : <LanguageGamesTab />}
+            </>
+          )}
+          {activeTab === "social" && <SocialTab />}
           {activeTab === "profile" && <ProfileTab />}
         </motion.div>
       </main>

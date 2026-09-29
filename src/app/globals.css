@@ -43,84 +43,86 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* Fluency Custom Colors */
-  --color-cream: #FBF7F0;
+  /* Fluency Custom Colors - Updated Palette */
+  --color-cream: #F8F8F8;
   --color-charcoal: #2D2A24;
-  --color-coral: #FF7B5A;
+  --color-coral: #E56515;
   --color-sage: #7DBD8C;
-  --color-butter: #FADF7A;
-  --color-warm-white: #FFF9F0;
-  --color-soft-pink: #FFB5A7;
+  --color-butter: #FBA45C;
+  --color-warm-white: #FFFFFF;
+  --color-soft-pink: #FBC4A0;
   --color-mint: #A8E6CF;
+  --color-gray: #CDCDCB;
+  --color-gray-medium: #919599;
 }
 
 :root {
   --radius: 0.75rem;
-  --background: #FBF7F0;
+  --background: #F8F8F8;
   --foreground: #2D2A24;
   --card: #FFFFFF;
   --card-foreground: #2D2A24;
   --popover: #FFFFFF;
   --popover-foreground: #2D2A24;
-  --primary: #FF7B5A;
+  --primary: #E56515;
   --primary-foreground: #FFFFFF;
-  --secondary: #F0EBE3;
+  --secondary: #CDCDCB;
   --secondary-foreground: #2D2A24;
-  --muted: #F0EBE3;
-  --muted-foreground: #8A8478;
+  --muted: #CDCDCB;
+  --muted-foreground: #919599;
   --accent: #7DBD8C;
   --accent-foreground: #FFFFFF;
-  --destructive: #E85D4A;
-  --border: #E8E2D9;
-  --input: #E8E2D9;
-  --ring: #FF7B5A;
-  --chart-1: #FF7B5A;
+  --destructive: #E56515;
+  --border: #CDCDCB;
+  --input: #CDCDCB;
+  --ring: #E56515;
+  --chart-1: #E56515;
   --chart-2: #7DBD8C;
-  --chart-3: #FADF7A;
-  --chart-4: #FFB5A7;
+  --chart-3: #FBA45C;
+  --chart-4: #FBC4A0;
   --chart-5: #A8E6CF;
-  --sidebar: #F0EBE3;
+  --sidebar: #CDCDCB;
   --sidebar-foreground: #2D2A24;
-  --sidebar-primary: #FF7B5A;
+  --sidebar-primary: #E56515;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F0EBE3;
+  --sidebar-accent: #CDCDCB;
   --sidebar-accent-foreground: #2D2A24;
-  --sidebar-border: #E8E2D9;
-  --sidebar-ring: #FF7B5A;
+  --sidebar-border: #CDCDCB;
+  --sidebar-ring: #E56515;
 }
 
 .dark {
   --background: #1A1814;
-  --foreground: #F5F0E8;
+  --foreground: #F8F8F8;
   --card: #252219;
-  --card-foreground: #F5F0E8;
+  --card-foreground: #F8F8F8;
   --popover: #252219;
-  --popover-foreground: #F5F0E8;
-  --primary: #FF7B5A;
+  --popover-foreground: #F8F8F8;
+  --primary: #E56515;
   --primary-foreground: #FFFFFF;
   --secondary: #2D2A24;
-  --secondary-foreground: #F5F0E8;
+  --secondary-foreground: #F8F8F8;
   --muted: #2D2A24;
-  --muted-foreground: #A09A8E;
+  --muted-foreground: #919599;
   --accent: #7DBD8C;
   --accent-foreground: #FFFFFF;
-  --destructive: #FF6B57;
+  --destructive: #E56515;
   --border: #3A3630;
   --input: #3A3630;
-  --ring: #FF7B5A;
-  --chart-1: #FF7B5A;
+  --ring: #E56515;
+  --chart-1: #E56515;
   --chart-2: #7DBD8C;
-  --chart-3: #FADF7A;
-  --chart-4: #FFB5A7;
+  --chart-3: #FBA45C;
+  --chart-4: #FBC4A0;
   --chart-5: #A8E6CF;
   --sidebar: #252219;
-  --sidebar-foreground: #F5F0E8;
-  --sidebar-primary: #FF7B5A;
+  --sidebar-foreground: #F8F8F8;
+  --sidebar-primary: #E56515;
   --sidebar-primary-foreground: #FFFFFF;
   --sidebar-accent: #2D2A24;
-  --sidebar-accent-foreground: #F5F0E8;
+  --sidebar-accent-foreground: #F8F8F8;
   --sidebar-border: #3A3630;
-  --sidebar-ring: #FF7B5A;
+  --sidebar-ring: #E56515;
 }
 
 @layer base {
@@ -171,8 +173,8 @@
 }
 
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 123, 90, 0.4); }
-  50% { box-shadow: 0 0 20px 8px rgba(255, 123, 90, 0.15); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(229, 101, 21, 0.4); }
+  50% { box-shadow: 0 0 20px 8px rgba(229, 101, 21, 0.15); }
 }
 
 @keyframes island-slide-up {
@@ -182,7 +184,7 @@
 
 @keyframes gold-flash {
   0% { background-color: transparent; }
-  30% { background-color: rgba(250, 223, 122, 0.4); }
+  30% { background-color: rgba(235, 101, 21, 0.4); }
   100% { background-color: transparent; }
 }
 
@@ -271,17 +273,17 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #D4CFC6;
+  background: #CDCDCB;
   border-radius: 3px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #B8B2A8;
+  background: #919599;
 }
 
 /* XP gradient */
 .xp-gradient {
-  background: linear-gradient(90deg, #7DBD8C, #A8E6CF, #7DBD8C);
+  background: linear-gradient(90deg, #E56515, #FBA45C, #E56515);
   background-size: 200% 100%;
   animation: shimmer 3s linear infinite;
 }

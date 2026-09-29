@@ -1,5 +1,5 @@
 // This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/prisma-schema
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -10,37 +10,161 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Users ───────────────────────────────────────────────────────────────────
+
 model User {
-  id        String   @id @default(cuid())
-  email     String?  @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String?
+  avatar        String?
+  language      String    @default("ja") // target language
+  xp            Int       @default(0)
+  level         Int       @default(1)
+  streak        Int       @default(0)
+  bestStreak    Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  progress  Progress?
-  words     ScannedWord[]
+  // Friendships initiated by this user
+  friendshipsAsRequester Friend[]  @relation("FriendRequester")
+  friendshipsAsAcceptee  Friend[]  @relation("FriendAcceptee")
+  
+  // Friend requests sent and received
+  sentFriendRequests FriendRequest[] @relation("SentRequests")
+  receivedFriendRequests FriendRequest[] @relation("ReceivedRequests")
+
+  // Decks created and joined
+  createdDecks     SharedDeck[]
+  deckMemberships  UserDeckMembership[]
+  
+  // Words added to decks
+  addedDeckWords   DeckWord[] @relation("WordContributions")
+  
+  // Words review history
+  wordReviews      WordReview[]
+
+  // Session tokens
+  sessionTokens    SessionToken[]
+
+  @@map("users")
 }
 
-model Progress {
+// ─── Friendships ─────────────────────────────────────────────────────────────
+
+model Friend {
   id          String   @id @default(cuid())
-  userId      String   @unique
-  xp          Int      @default(0)
-  level       Int      @default(1)
-  streak      Int      @default(0)
-  lastActive  DateTime?
+  userId      String
+  friendId    String
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  requester   User     @relation("FriendRequester", fields: [userId], references: [id])
+  acceptee    User     @relation("FriendAcceptee", fields: [friendId], references: [id])
+
+  @@unique([userId, friendId])
+  @@index([friendId])
+  @@map("friends")
 }
 
-model ScannedWord {
-  id              String   @id @default(cuid())
-  userId          String
-  original        String
-  directTranslation String
-  romanized       String
-  sourceLanguage  String
-  targetLanguage  String
-  createdAt       DateTime @default(now())
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+// ─── Friend Requests ─────────────────────────────────────────────────────────
+
+model FriendRequest {
+  id          String   @id @default(cuid())
+  fromId      String
+  toId        String
+  status      String   @default("pending") // pending | accepted | declined
+  createdAt   DateTime @default(now())
+  
+  sender      User     @relation("SentRequests", fields: [fromId], references: [id])
+  receiver    User     @relation("ReceivedRequests", fields: [toId], references: [id])
+
+  @@unique([fromId, toId])
+  @@index([toId])
+  @@map("friend_requests")
+}
+
+// ─── Shared Decks ─────────────────────────────────────────────────────────────
+
+model SharedDeck {
+  id          String              @id @default(cuid())
+  name        String
+  description String?
+  language    String              @default("ja")
+  ownerId     String
+  isPublic    Boolean             @default(false)
+  wordCount   Int                 @default(0)
+  studyCount  Int                 @default(0)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  
+  owner       User                @relation(fields: [ownerId], references: [id])
+  members     UserDeckMembership[]
+  words       DeckWord[]
+
+  @@index([ownerId])
+  @@index([isPublic])
+  @@map("shared_decks")
+}
+
+model UserDeckMembership {
+  id            String   @id @default(cuid())
+  userId        String
+  deckId        String
+  role          String   @default("member") // owner | editor | member
+  joinedAt      DateTime @default(now())
+  
+  user          User     @relation(fields: [userId], references: [id])
+  deck          SharedDeck @relation(fields: [deckId], references: [id])
+
+  @@unique([userId, deckId])
+  @@map("deck_memberships")
+}
+
+// ─── Shared Word List ─────────────────────────────────────────────────────────
+
+model DeckWord {
+  id          String   @id @default(cuid())
+  deckId      String
+  original    String
+  translation String
+  romanized   String?
+  context     String?
+  addedById   String
+  addedAt     DateTime @default(now())
+  
+  deck        SharedDeck @relation(fields: [deckId], references: [id])
+  addedBy     User     @relation("WordContributions", fields: [addedById], references: [id])
+
+  @@index([deckId])
+  @@map("deck_words")
+}
+
+// ─── Word Reviews (spaced repetition tracking) ────────────────────────────────
+
+model WordReview {
+  id          String   @id @default(cuid())
+  userId      String
+  wordOriginal String
+  wordTranslation String
+  correct     Boolean
+  earnedXP    Int      @default(5)
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("word_reviews")
+}
+
+// ─── Session Tokens ───────────────────────────────────────────────────────────
+
+model SessionToken {
+  id          String   @id
+  userId      String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@map("session_tokens")
 }

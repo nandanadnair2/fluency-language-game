@@ -33,7 +33,7 @@ export default function TranslationCards({
       text: translation.directTranslation,
       fontClass: "font-sans text-xl font-medium",
       textColor: "text-charcoal",
-      icon: <SpeakerHigh size={18} weight="fill" className="text-coral" />,
+      icon: null,
     },
     {
       id: "romanized",
@@ -41,7 +41,21 @@ export default function TranslationCards({
       text: translation.romanized,
       fontClass: "font-sans text-lg font-normal",
       textColor: "text-sage",
-      icon: null,
+      icon: translation.sourceLanguage === "ja" ? (
+        <button
+          onClick={() => {
+            if ('speechSynthesis' in window) {
+              const utterance = new SpeechSynthesisUtterance(translation.original);
+              utterance.lang = 'ja-JP';
+              utterance.rate = 0.8;
+              window.speechSynthesis.speak(utterance);
+            }
+          }}
+          className="w-8 h-8 rounded-full bg-coral/10 flex items-center justify-center hover:bg-coral/20 transition-all active:scale-90 cursor-pointer"
+        >
+          <SpeakerHigh size={18} weight="fill" className="text-coral" />
+        </button>
+      ) : null,
     },
   ];
 

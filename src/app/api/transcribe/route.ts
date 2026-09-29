@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { execSync } from "child_process";
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from "fs";
 import { randomUUID } from "crypto";
+import { tmpdir } from "os";
+import { join } from "path";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+
+// Use system temp directory that works cross-platform
+const getTempPath = (filename: string) => join(tmpdir(), filename);
 
 export async function POST(req: NextRequest) {
   const filesToClean: string[] = [];
@@ -37,7 +42,7 @@ export async function POST(req: NextRequest) {
     const ext = mimeType?.includes("mp3") ? "mp3"
       : mimeType?.includes("ogg") ? "ogg"
       : "wav";
-    const safeFile = `/tmp/fluency_${fileId}.${ext}`;
+    const safeFile = getTempPath(`fluency_${fileId}.${ext}`);
     filesToClean.push(safeFile, `${safeFile}.json`);
 
     writeFileSync(safeFile, audioBuffer);
@@ -95,7 +100,7 @@ export async function POST(req: NextRequest) {
     // ── Method 3: Convert via ffmpeg then retry CLI ──
     try {
       // Force convert to WAV using system ffmpeg
-      const wavFile = `/tmp/fluency_${fileId}_conv.wav`;
+      const wavFile = getTempPath(`fluency_${fileId}_conv.wav`);
       filesToClean.push(wavFile, `${wavFile}.json`);
       execSync(`ffmpeg -y -i "${safeFile}" -ar 16000 -ac 1 "${wavFile}" 2>&1`, {
         encoding: "utf-8", timeout: 10000,

@@ -12,11 +12,16 @@ import {
 } from "@phosphor-icons/react";
 
 // Lazy-load confetti on client only
-let confettiFn: typeof import("canvas-confetti").default | null = null;
-async function getConfetti() {
+type ConfettiFn = typeof import("canvas-confetti");
+let confettiFn: ConfettiFn | null = null;
+async function getConfetti(): Promise<ConfettiFn> {
   if (!confettiFn) {
-    const mod = await import("canvas-confetti");
-    confettiFn = mod.default;
+    // `canvas-confetti` is CJS (`export = confetti`), so the callable lives on
+    // `.default` under ESM interop but is the module object itself otherwise.
+    const mod = (await import("canvas-confetti")) as unknown as ConfettiFn & {
+      default?: ConfettiFn;
+    };
+    confettiFn = mod.default ?? mod;
   }
   return confettiFn;
 }

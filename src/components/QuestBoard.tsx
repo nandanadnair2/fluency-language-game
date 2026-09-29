@@ -55,6 +55,7 @@ export default function QuestBoard({
         {quests.map((quest, index) => {
           const Icon = iconMap[quest.icon] || BookOpen;
           const progressPercent = (quest.progress / quest.target) * 100;
+          const canComplete = !quest.completed && quest.progress >= quest.target;
 
           return (
             <motion.div
@@ -133,6 +134,14 @@ export default function QuestBoard({
                       <span className="text-[10px] text-muted-foreground font-medium">
                         {quest.progress}/{quest.target}
                       </span>
+                      {canComplete && (
+                        <button
+                          onClick={() => onCompleteQuest(quest.id)}
+                          className="ml-auto px-3 py-1 rounded-full bg-sage text-white text-xs font-semibold hover:bg-sage/90 transition-all active:scale-95"
+                        >
+                          Claim
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

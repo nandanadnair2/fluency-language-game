@@ -77,7 +77,7 @@ export default function Leaderboard() {
     const playerEntry: LeaderboardEntry = {
       rank: 0,
       name: playerName,
-      avatar: playerAvatar || "🎯",
+      avatar: playerAvatar || "/logo.svg",
       level: playerLevel,
       xp: playerXP,
       weeklyXP: Math.floor(playerXP * 0.3),
@@ -146,7 +146,7 @@ export default function Leaderboard() {
 
   const getRankBg = (rank: number, isPlayer: boolean) => {
     if (isPlayer) return "bg-coral/10 border-coral/30";
-    if (rank === 1) return "bg-yellow-500/8 border-yellow-500/20";
+    if (rank === 1) return "bg-yellow-500/20 border-yellow-500/30";
     if (rank === 2) return "bg-gray-100 border-gray-200/50";
     if (rank === 3) return "bg-amber-50 border-amber-200/50";
     return "bg-card border-border/30";
@@ -272,11 +272,11 @@ export default function Leaderboard() {
 
               {/* XP + weekly gain */}
               <div className="text-right flex-shrink-0">
-                <p className="text-sm font-bold text-charcoal">
+                <p className="text-xs font-bold text-charcoal">
                   {entry.weeklyXP.toLocaleString()}
                 </p>
-                <p className="text-[10px] text-muted-foreground">
-                  +{entry.weeklyXP} <span className="text-sage">XP</span>
+                <p className="text-[9px] text-muted-foreground">
+                  weekly XP
                 </p>
               </div>
             </motion.div>
